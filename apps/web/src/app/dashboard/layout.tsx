@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
     Shield,
     LayoutDashboard,
@@ -13,7 +13,10 @@ import {
     ChevronLeft,
     ChevronRight,
     LogOut,
+    User,
 } from 'lucide-react';
+import { useAuthStore } from '@/stores/auth-store';
+import { authApi } from '@/lib/auth-api';
 
 const navigation = [
     { name: '대시보드', href: '/dashboard', icon: LayoutDashboard },
@@ -29,7 +32,34 @@ export default function DashboardLayout({
     children: React.ReactNode;
 }) {
     const pathname = usePathname();
+    const router = useRouter();
     const [collapsed, setCollapsed] = useState(false);
+    const { user, isAuthenticated, refreshToken, logout } = useAuthStore();
+
+    // Auth guard - redirect if not authenticated
+    useEffect(() => {
+        if (!isAuthenticated) {
+            router.push('/login');
+        }
+    }, [isAuthenticated, router]);
+
+    const handleLogout = async () => {
+        try {
+            if (refreshToken) {
+                await authApi.logout(refreshToken);
+            }
+        } catch (error) {
+            console.error('Logout error:', error);
+        } finally {
+            logout();
+            router.push('/login');
+        }
+    };
+
+    // Don't render if not authenticated
+    if (!isAuthenticated) {
+        return null;
+    }
 
     return (
         <div className="flex h-screen bg-slate-50 dark:bg-slate-900">
@@ -57,8 +87,8 @@ export default function DashboardLayout({
                                 key={item.name}
                                 href={item.href}
                                 className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${isActive
-                                        ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
-                                        : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700/50'
+                                    ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
+                                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-700/50'
                                     }`}
                                 title={collapsed ? item.name : undefined}
                             >
@@ -94,10 +124,23 @@ export default function DashboardLayout({
                     <h1 className="text-lg font-semibold text-slate-900 dark:text-white">
                         {navigation.find((n) => pathname?.startsWith(n.href))?.name || '대시보드'}
                     </h1>
-                    <button className="flex items-center gap-2 text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">
-                        <LogOut className="h-5 w-5" />
-                        <span>로그아웃</span>
-                    </button>
+                    <div className="flex items-center gap-4">
+                        {/* User info */}
+                        {user && (
+                            <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+                                <User className="h-5 w-5" />
+                                <span className="text-sm">{user.name || user.email}</span>
+                            </div>
+                        )}
+                        {/* Logout button */}
+                        <button
+                            onClick={handleLogout}
+                            className="flex items-center gap-2 text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white transition-colors"
+                        >
+                            <LogOut className="h-5 w-5" />
+                            <span>로그아웃</span>
+                        </button>
+                    </div>
                 </header>
 
                 {/* Content */}
@@ -106,3 +149,4 @@ export default function DashboardLayout({
         </div>
     );
 }
+
