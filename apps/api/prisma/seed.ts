@@ -236,6 +236,8 @@ async function main() {
     console.log('Test accounts:');
     console.log('  Admin: admin@acme.com / admin123');
     console.log('  Developer: dev@acme.com / dev123');
+    console.log('  Security Admin: security@acme.com / security123');
+    console.log('  Viewer: viewer@acme.com / viewer123');
 }
 
 main()
