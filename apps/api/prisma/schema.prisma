@@ -1,0 +1,709 @@
+// Prisma Schema for JASCA - Trivy Vulnerability Management System
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// Organization & Project Models
+// ============================================
+
+model Organization {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  description String?
+  
+  projects    Project[]
+  users       User[]
+  policies    Policy[]
+  apiTokens   ApiToken[]
+  auditLogs   AuditLog[]
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@index([slug])
+}
+
+model Project {
+  id             String    @id @default(uuid())
+  name           String
+  slug           String
+  description    String?
+  
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  registries     Registry[]
+  scanResults    ScanResult[]
+  policies       Policy[]
+  assetCriticality AssetCriticality?
+  
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+}
+
+model Registry {
+  id          String    @id @default(uuid())
+  name        String
+  url         String
+  type        RegistryType @default(DOCKER_HUB)
+  
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@index([projectId])
+}
+
+enum RegistryType {
+  DOCKER_HUB
+  HARBOR
+  ECR
+  GCR
+  ACR
+  NEXUS
+  ARTIFACTORY
+  OTHER
+}
+
+// ============================================
+// User & Authentication Models
+// ============================================
+
+model User {
+  id             String    @id @default(uuid())
+  email          String    @unique
+  passwordHash   String
+  name           String
+  isActive       Boolean   @default(true)
+  
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  
+  roles          UserRole[]
+  assignedVulns  ScanVulnerability[] @relation("AssignedTo")
+  comments       VulnerabilityComment[]
+  exceptions     PolicyException[] @relation("ApprovedBy")
+  requestedExceptions PolicyException[] @relation("RequestedBy")
+  auditLogs      AuditLog[]
+  bookmarks      VulnerabilityBookmark[]
+  
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  lastLoginAt    DateTime?
+  
+  @@index([email])
+  @@index([organizationId])
+}
+
+model UserRole {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role
+  scope     RoleScope @default(ORGANIZATION)
+  scopeId   String?   // projectId or organizationId depending on scope
+  
+  createdAt DateTime @default(now())
+  
+  @@unique([userId, role, scope, scopeId])
+  @@index([userId])
+}
+
+enum Role {
+  SYSTEM_ADMIN
+  ORG_ADMIN
+  PROJECT_ADMIN
+  DEVELOPER
+  VIEWER
+}
+
+enum RoleScope {
+  SYSTEM
+  ORGANIZATION
+  PROJECT
+}
+
+model ApiToken {
+  id             String    @id @default(uuid())
+  name           String
+  tokenHash      String    @unique
+  tokenPrefix    String    // First 8 chars for identification
+  
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  permissions    String[]  // ["scan:upload", "scan:read", "policy:check"]
+  expiresAt      DateTime?
+  lastUsedAt     DateTime?
+  
+  createdAt      DateTime  @default(now())
+  
+  @@index([tokenHash])
+  @@index([organizationId])
+}
+
+// ============================================
+// Scan & Vulnerability Models
+// ============================================
+
+model ScanResult {
+  id              String    @id @default(uuid())
+  
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  imageRef        String    // registry/repo:tag
+  imageDigest     String?
+  tag             String?
+  commitHash      String?
+  branch          String?
+  ciPipeline      String?
+  ciJobUrl        String?
+  
+  sourceType      SourceType
+  trivyVersion    String?
+  schemaVersion   String?
+  
+  rawResult       Json      // Original scan result
+  artifactName    String?
+  artifactType    String?   // container_image, filesystem, etc.
+  
+  summary         ScanSummary?
+  vulnerabilities ScanVulnerability[]
+  
+  scannedAt       DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  
+  @@index([projectId, createdAt])
+  @@index([imageRef])
+  @@index([imageDigest])
+}
+
+model ScanSummary {
+  id           String     @id @default(uuid())
+  scanResultId String     @unique
+  scanResult   ScanResult @relation(fields: [scanResultId], references: [id], onDelete: Cascade)
+  
+  totalVulns   Int        @default(0)
+  critical     Int        @default(0)
+  high         Int        @default(0)
+  medium       Int        @default(0)
+  low          Int        @default(0)
+  unknown      Int        @default(0)
+}
+
+enum SourceType {
+  TRIVY_JSON
+  TRIVY_SARIF
+  CI_BAMBOO
+  CI_GITLAB
+  CI_JENKINS
+  CI_GITHUB_ACTIONS
+  MANUAL
+}
+
+model Vulnerability {
+  id              String    @id @default(uuid())
+  cveId           String    @unique
+  
+  title           String?
+  description     String?
+  severity        Severity
+  
+  cvssV2Score     Float?
+  cvssV2Vector    String?
+  cvssV3Score     Float?
+  cvssV3Vector    String?
+  
+  references      String[]
+  cweIds          String[]
+  
+  publishedAt     DateTime?
+  lastModifiedAt  DateTime?
+  
+  // Zero Day and Exploit info
+  isZeroDay         Boolean   @default(false)
+  zeroDetectedAt    DateTime?
+  exploitAvailable  Boolean   @default(false)
+  
+  scanResults     ScanVulnerability[]
+  impact          VulnerabilityImpact?
+  mitreMapping    MitreMapping[]
+  bookmarks       VulnerabilityBookmark[]
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  @@index([cveId])
+  @@index([severity])
+  @@index([isZeroDay])
+}
+
+enum Severity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  UNKNOWN
+}
+
+model ScanVulnerability {
+  id                String    @id @default(uuid())
+  
+  scanResultId      String
+  scanResult        ScanResult @relation(fields: [scanResultId], references: [id], onDelete: Cascade)
+  
+  vulnerabilityId   String
+  vulnerability     Vulnerability @relation(fields: [vulnerabilityId], references: [id], onDelete: Cascade)
+  
+  // Package-specific info
+  pkgName           String
+  pkgVersion        String
+  fixedVersion      String?
+  pkgPath           String?
+  layer             Json?     // Layer info from Trivy
+  
+  // Management
+  status            VulnStatus @default(OPEN)
+  assigneeId        String?
+  assignee          User?      @relation("AssignedTo", fields: [assigneeId], references: [id], onDelete: SetNull)
+  
+  // Deduplication
+  vulnHash          String    // Hash of cveId + pkgName + pkgVersion
+  
+  comments          VulnerabilityComment[]
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@unique([scanResultId, vulnHash])
+  @@index([scanResultId])
+  @@index([vulnerabilityId])
+  @@index([status])
+  @@index([assigneeId])
+}
+
+enum VulnStatus {
+  OPEN
+  ACKNOWLEDGED
+  IN_PROGRESS
+  FIXED
+  IGNORED
+  FALSE_POSITIVE
+}
+
+model VulnerabilityComment {
+  id                  String    @id @default(uuid())
+  
+  scanVulnerabilityId String
+  scanVulnerability   ScanVulnerability @relation(fields: [scanVulnerabilityId], references: [id], onDelete: Cascade)
+  
+  authorId            String
+  author              User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  
+  content             String
+  
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  
+  @@index([scanVulnerabilityId])
+}
+
+// ============================================
+// Policy Models
+// ============================================
+
+enum Environment {
+  ALL
+  DEVELOPMENT
+  STAGING
+  PRODUCTION
+}
+
+model Policy {
+  id             String    @id @default(uuid())
+  name           String
+  description    String?
+  isActive       Boolean   @default(true)
+  
+  // Environment-specific policy (Phase 2)
+  environment    Environment @default(ALL)
+  
+  // Scope
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  projectId      String?
+  project        Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  // Policy Inheritance (Phase 7)
+  parentPolicyId String?
+  parentPolicy   Policy?   @relation("PolicyInheritance", fields: [parentPolicyId], references: [id])
+  childPolicies  Policy[]  @relation("PolicyInheritance")
+  isInherited    Boolean   @default(false)
+  
+  // Rules
+  rules          PolicyRule[]
+  exceptions     PolicyException[]
+  
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  
+  @@index([organizationId])
+  @@index([projectId])
+  @@index([environment])
+}
+
+model PolicyRule {
+  id             String    @id @default(uuid())
+  
+  policyId       String
+  policy         Policy    @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  
+  ruleType       PolicyRuleType
+  
+  // Conditions (JSON for flexibility)
+  conditions     Json
+  // Examples:
+  // { "severity": ["CRITICAL", "HIGH"], "action": "BLOCK" }
+  // { "cvssScore": { "gte": 7.0 }, "action": "BLOCK" }
+  // { "cveAge": { "days": 30 }, "action": "WARN" }
+  
+  action         PolicyAction
+  message        String?
+  
+  priority       Int       @default(0)
+  
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  
+  @@index([policyId])
+}
+
+enum PolicyRuleType {
+  SEVERITY_THRESHOLD
+  CVSS_THRESHOLD
+  CVE_BLOCKLIST
+  PACKAGE_BLOCKLIST
+  CVE_AGE
+  CUSTOM
+}
+
+enum PolicyAction {
+  BLOCK
+  WARN
+  INFO
+  ALLOW
+}
+
+model PolicyException {
+  id             String    @id @default(uuid())
+  
+  policyId       String
+  policy         Policy    @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  
+  // What is excepted
+  exceptionType  ExceptionType
+  targetValue    String    // CVE ID, package name, image ref, etc.
+  
+  reason         String
+  
+  // Approval workflow
+  status         ExceptionStatus @default(PENDING)
+  requestedById  String
+  requestedBy    User      @relation("RequestedBy", fields: [requestedById], references: [id])
+  approvedById   String?
+  approvedBy     User?     @relation("ApprovedBy", fields: [approvedById], references: [id])
+  
+  // Expiration
+  expiresAt      DateTime?
+  isExpired      Boolean   @default(false)
+  
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  
+  @@index([policyId])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+enum ExceptionType {
+  CVE
+  PACKAGE
+  IMAGE
+  SEVERITY
+}
+
+enum ExceptionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+// ============================================
+// Notification Models
+// ============================================
+
+model NotificationChannel {
+  id             String    @id @default(uuid())
+  name           String
+  type           ChannelType
+  
+  config         Json
+  // Slack: { "webhookUrl": "...", "channel": "#security" }
+  // Email: { "recipients": ["..."], "smtpHost": "..." }
+  // Mattermost: { "webhookUrl": "..." }
+  
+  isActive       Boolean   @default(true)
+  
+  rules          NotificationRule[]
+  
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+enum ChannelType {
+  SLACK
+  MATTERMOST
+  EMAIL
+  WEBHOOK
+}
+
+model NotificationRule {
+  id             String    @id @default(uuid())
+  
+  channelId      String
+  channel        NotificationChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  
+  eventType      NotificationEventType
+  conditions     Json?     // { "severity": ["CRITICAL"] }
+  
+  isActive       Boolean   @default(true)
+  
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  
+  @@index([channelId])
+}
+
+enum NotificationEventType {
+  NEW_CRITICAL_VULN
+  NEW_HIGH_VULN
+  POLICY_VIOLATION
+  EXCEPTION_REQUESTED
+  EXCEPTION_APPROVED
+  EXCEPTION_EXPIRING
+  SCAN_COMPLETED
+}
+
+// ============================================
+// Audit Log
+// ============================================
+
+model AuditLog {
+  id             String    @id @default(uuid())
+  
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  
+  userId         String?
+  user           User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  action         String    // CREATE, UPDATE, DELETE, LOGIN, etc.
+  resource       String    // scan_result, policy, user, etc.
+  resourceId     String?
+  
+  details        Json?     // Additional context
+  ipAddress      String?
+  userAgent      String?
+  
+  createdAt      DateTime  @default(now())
+  
+  @@index([organizationId, createdAt])
+  @@index([userId])
+  @@index([action])
+  @@index([resource])
+}
+
+// ============================================
+// Report Models
+// ============================================
+
+model ReportTemplate {
+  id             String    @id @default(uuid())
+  name           String
+  description    String?
+  
+  type           ReportType
+  config         Json      // Template configuration
+  
+  isSystem       Boolean   @default(false)
+  
+  reports        Report[]
+  
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+enum ReportType {
+  VULNERABILITY_SUMMARY
+  TREND_ANALYSIS
+  COMPLIANCE_AUDIT
+  PROJECT_STATUS
+  CUSTOM
+}
+
+model Report {
+  id             String    @id @default(uuid())
+  name           String
+  
+  templateId     String
+  template       ReportTemplate @relation(fields: [templateId], references: [id])
+  
+  parameters     Json      // Report parameters
+  status         ReportStatus @default(PENDING)
+  
+  filePath       String?   // Path to generated file
+  fileType       String?   // PDF, CSV, etc.
+  
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
+  
+  @@index([templateId])
+  @@index([status])
+}
+
+enum ReportStatus {
+  PENDING
+  GENERATING
+  COMPLETED
+  FAILED
+}
+
+// ============================================
+// Phase 1: Data Enhancement Models
+// ============================================
+
+model MergedVulnerability {
+  id              String    @id @default(uuid())
+  cveId           String
+  primaryVulnId   String
+  mergedVulnIds   String[]
+  mergeReason     String
+  
+  createdAt       DateTime  @default(now())
+  
+  @@index([cveId])
+}
+
+model VulnerabilityImpact {
+  id               String    @id @default(uuid())
+  vulnerabilityId  String    @unique
+  vulnerability    Vulnerability @relation(fields: [vulnerabilityId], references: [id], onDelete: Cascade)
+  
+  affectedProjects String[]
+  affectedImages   String[]
+  affectedServices String[]
+  impactScore      Float
+  
+  calculatedAt     DateTime  @default(now())
+  
+  @@index([vulnerabilityId])
+}
+
+model MitreMapping {
+  id              String    @id @default(uuid())
+  vulnerabilityId String
+  vulnerability   Vulnerability @relation(fields: [vulnerabilityId], references: [id], onDelete: Cascade)
+  
+  techniqueId     String    // T1059, T1078, etc.
+  techniqueName   String
+  tacticId        String
+  tacticName      String
+  
+  confidence      Float     @default(0.5)
+  
+  @@unique([vulnerabilityId, techniqueId])
+  @@index([vulnerabilityId])
+}
+
+model VulnerabilityBookmark {
+  id              String    @id @default(uuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vulnerabilityId String
+  vulnerability   Vulnerability @relation(fields: [vulnerabilityId], references: [id], onDelete: Cascade)
+  
+  note            String?
+  createdAt       DateTime  @default(now())
+  
+  @@unique([userId, vulnerabilityId])
+  @@index([userId])
+  @@index([vulnerabilityId])
+}
+
+// ============================================
+// Phase 2: Security Policy Enhancement Models
+// ============================================
+
+model RiskScoreConfig {
+  id               String    @id @default(uuid())
+  organizationId   String    @unique
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Weight factors for risk calculation
+  exposureWeight   Float     @default(1.0)
+  assetWeight      Float     @default(1.0)
+  cvssWeight       Float     @default(1.0)
+  exploitWeight    Float     @default(1.5)  // Higher weight if exploit is available
+  
+  // Custom formula (optional)
+  customFormula    String?   // e.g., "cvss * exposure * asset * (exploit ? 1.5 : 1)"
+  
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model AssetCriticality {
+  id               String    @id @default(uuid())
+  projectId        String    @unique
+  project          Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  criticalityLevel CriticalityLevel @default(MEDIUM)
+  exposureLevel    ExposureLevel    @default(INTERNAL)
+  
+  // Custom tags for additional context
+  tags             String[]
+  notes            String?
+  
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+enum CriticalityLevel {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum ExposureLevel {
+  INTERNET      // Publicly accessible
+  DMZ           // In DMZ  
+  INTERNAL      // Internal network
+  ISOLATED      // Air-gapped or isolated
+}
