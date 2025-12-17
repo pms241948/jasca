@@ -8,6 +8,15 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { ApiKeyStrategy } from './strategies/api-key.strategy';
 import { UsersModule } from '../users/users.module';
 
+// Auth extension services
+import { MfaService } from './services/mfa.service';
+import { SessionService } from './services/session.service';
+import { LoginHistoryService } from './services/login-history.service';
+import { PasswordPolicyService } from './services/password-policy.service';
+import { IpControlService } from './services/ip-control.service';
+import { EmailVerificationService } from './services/email-verification.service';
+import { InvitationService } from './services/invitation.service';
+
 @Module({
     imports: [
         PassportModule.register({ defaultStrategy: 'jwt' }),
@@ -24,7 +33,29 @@ import { UsersModule } from '../users/users.module';
         UsersModule,
     ],
     controllers: [AuthController],
-    providers: [AuthService, JwtStrategy, ApiKeyStrategy],
-    exports: [AuthService, JwtModule],
+    providers: [
+        AuthService,
+        JwtStrategy,
+        ApiKeyStrategy,
+        // Auth extension services
+        MfaService,
+        SessionService,
+        LoginHistoryService,
+        PasswordPolicyService,
+        IpControlService,
+        EmailVerificationService,
+        InvitationService,
+    ],
+    exports: [
+        AuthService,
+        JwtModule,
+        MfaService,
+        SessionService,
+        LoginHistoryService,
+        PasswordPolicyService,
+        IpControlService,
+        EmailVerificationService,
+        InvitationService,
+    ],
 })
 export class AuthModule { }

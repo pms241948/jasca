@@ -28,6 +28,12 @@ model Organization {
   gitIntegrations GitIntegration[]
   issueTrackerIntegrations IssueTrackerIntegration[]
   
+  // Auth extension models
+  invitations     UserInvitation[]
+  ssoConfigs      SsoConfig[]
+  ipWhitelists    IpWhitelist[]
+  passwordPolicy  PasswordPolicy?
+  
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   
@@ -106,6 +112,20 @@ model User {
   workflowChanges VulnerabilityWorkflow[] @relation("WorkflowChangedBy")
   evidenceCreated FixEvidence[] @relation("EvidenceCreatedBy")
   
+  // Auth extension relations
+  emailVerification   EmailVerification?
+  mfa                 UserMfa?
+  sessions            UserSession[]
+  loginHistory        LoginHistory[]
+  passwordHistory     PasswordHistory[]
+  sentInvitations     UserInvitation[] @relation("InvitedBy")
+  
+  // Additional auth fields
+  emailVerifiedAt     DateTime?
+  passwordChangedAt   DateTime?
+  lockedUntil         DateTime?
+  failedLoginAttempts Int       @default(0)
+  
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   lastLoginAt    DateTime?
@@ -131,6 +151,7 @@ model UserRole {
 enum Role {
   SYSTEM_ADMIN
   ORG_ADMIN
+  SECURITY_ADMIN
   PROJECT_ADMIN
   DEVELOPER
   VIEWER
@@ -887,4 +908,155 @@ model LinkedIssue {
   
   @@unique([integrationId, scanVulnerabilityId])
   @@index([scanVulnerabilityId])
+}
+
+// ============================================
+// Authentication Extension Models
+// ============================================
+
+model EmailVerification {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  
+  @@index([token])
+}
+
+model UserMfa {
+  id            String    @id @default(uuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  secret        String    // TOTP secret (encrypted)
+  isEnabled     Boolean   @default(false)
+  backupCodes   String[]  // Encrypted backup codes
+  lastUsedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model UserSession {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshToken String   @unique
+  deviceInfo   Json?    // { userAgent, platform, browser }
+  ipAddress    String?
+  isActive     Boolean  @default(true)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  lastActiveAt DateTime @default(now())
+  
+  @@index([userId])
+  @@index([refreshToken])
+}
+
+model LoginHistory {
+  id         String      @id @default(uuid())
+  userId     String
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status     LoginStatus
+  ipAddress  String?
+  userAgent  String?
+  location   Json?       // GeoIP info
+  deviceId   String?     // Device fingerprint
+  failReason String?
+  createdAt  DateTime    @default(now())
+  
+  @@index([userId, createdAt])
+}
+
+enum LoginStatus {
+  SUCCESS
+  FAILED_PASSWORD
+  FAILED_MFA
+  BLOCKED_IP
+  ACCOUNT_LOCKED
+}
+
+model UserInvitation {
+  id             String           @id @default(uuid())
+  email          String
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedById    String
+  invitedBy      User             @relation("InvitedBy", fields: [invitedById], references: [id])
+  role           Role             @default(DEVELOPER)
+  token          String           @unique
+  status         InvitationStatus @default(PENDING)
+  expiresAt      DateTime
+  createdAt      DateTime         @default(now())
+  
+  @@unique([email, organizationId])
+  @@index([token])
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+model SsoConfig {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  provider       SsoProvider
+  isEnabled      Boolean      @default(false)
+  config         Json         // Provider-specific configuration
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  
+  @@unique([organizationId, provider])
+}
+
+enum SsoProvider {
+  GOOGLE
+  GITHUB
+  MICROSOFT
+  OKTA
+  SAML
+  OIDC
+}
+
+model IpWhitelist {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ipAddress      String       // Supports CIDR notation (e.g., 192.168.1.0/24)
+  description    String?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  
+  @@unique([organizationId, ipAddress])
+}
+
+model PasswordPolicy {
+  id                 String       @id @default(uuid())
+  organizationId     String       @unique
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  minLength          Int          @default(8)
+  requireUppercase   Boolean      @default(true)
+  requireLowercase   Boolean      @default(true)
+  requireNumbers     Boolean      @default(true)
+  requireSpecial     Boolean      @default(false)
+  maxAgeDays         Int?         // null = no expiration
+  historyCount       Int          @default(5) // Prevent reuse of last N passwords
+  lockoutThreshold   Int          @default(5) // Failed attempts before lockout
+  lockoutDurationMin Int          @default(30) // Lockout duration in minutes
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+}
+
+model PasswordHistory {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  passwordHash String
+  createdAt    DateTime @default(now())
+  
+  @@index([userId])
 }
