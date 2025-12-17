@@ -38,13 +38,22 @@ export interface PolicyEvaluation {
     appliedExceptions: PolicyExceptionType[];
 }
 
+type Environment = 'DEVELOPMENT' | 'STAGING' | 'PRODUCTION' | 'ALL';
+
 @Injectable()
 export class PolicyEngineService {
     constructor(private readonly prisma: PrismaService) { }
 
+    /**
+     * Evaluate policies against a scan result
+     * @param projectId - Project ID
+     * @param scanResultId - Scan result to evaluate
+     * @param environment - Optional environment filter (Phase 2)
+     */
     async evaluate(
         projectId: string,
         scanResultId: string,
+        environment?: Environment,
     ): Promise<PolicyEvaluation> {
         // Get project and organization
         const project = await this.prisma.project.findUnique({
@@ -57,9 +66,15 @@ export class PolicyEngineService {
         }
 
         // Get applicable policies (project-level and org-level)
+        // Filter by environment if specified (Phase 2)
+        const environmentFilter = environment
+            ? { OR: [{ environment: environment }, { environment: 'ALL' }] }
+            : {};
+
         const policies = await this.prisma.policy.findMany({
             where: {
                 isActive: true,
+                ...environmentFilter,
                 OR: [
                     { projectId },
                     { organizationId: project.organizationId, projectId: null },

@@ -24,6 +24,9 @@ model Organization {
   policies    Policy[]
   apiTokens   ApiToken[]
   auditLogs   AuditLog[]
+  riskScoreConfig RiskScoreConfig?
+  gitIntegrations GitIntegration[]
+  issueTrackerIntegrations IssueTrackerIntegration[]
   
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -44,6 +47,7 @@ model Project {
   scanResults    ScanResult[]
   policies       Policy[]
   assetCriticality AssetCriticality?
+  gitRepositories GitRepository[]
   
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -99,6 +103,8 @@ model User {
   requestedExceptions PolicyException[] @relation("RequestedBy")
   auditLogs      AuditLog[]
   bookmarks      VulnerabilityBookmark[]
+  workflowChanges VulnerabilityWorkflow[] @relation("WorkflowChangedBy")
+  evidenceCreated FixEvidence[] @relation("EvidenceCreatedBy")
   
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -285,6 +291,9 @@ model ScanVulnerability {
   vulnHash          String    // Hash of cveId + pkgName + pkgVersion
   
   comments          VulnerabilityComment[]
+  workflowHistory   VulnerabilityWorkflow[]
+  fixEvidence       FixEvidence[]
+  linkedIssues      LinkedIssue[]
   
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -296,11 +305,15 @@ model ScanVulnerability {
   @@index([assigneeId])
 }
 
+// Updated VulnStatus for Phase 3 workflow
 enum VulnStatus {
   OPEN
-  ACKNOWLEDGED
+  ASSIGNED
   IN_PROGRESS
+  FIX_SUBMITTED
+  VERIFYING
   FIXED
+  CLOSED
   IGNORED
   FALSE_POSITIVE
 }
@@ -706,4 +719,172 @@ enum ExposureLevel {
   DMZ           // In DMZ  
   INTERNAL      // Internal network
   ISOLATED      // Air-gapped or isolated
+}
+
+// ============================================
+// Phase 3: Workflow Management Models
+// ============================================
+
+model VulnerabilityWorkflow {
+  id                   String    @id @default(uuid())
+  scanVulnerabilityId  String
+  scanVulnerability    ScanVulnerability @relation(fields: [scanVulnerabilityId], references: [id], onDelete: Cascade)
+  
+  fromStatus           VulnStatus
+  toStatus             VulnStatus
+  changedById          String
+  changedBy            User      @relation("WorkflowChangedBy", fields: [changedById], references: [id])
+  
+  comment              String?
+  evidence             Json?     // Additional metadata about the change
+  
+  createdAt            DateTime  @default(now())
+  
+  @@index([scanVulnerabilityId])
+  @@index([changedById])
+  @@index([createdAt])
+}
+
+model FixEvidence {
+  id                   String    @id @default(uuid())
+  scanVulnerabilityId  String
+  scanVulnerability    ScanVulnerability @relation(fields: [scanVulnerabilityId], references: [id], onDelete: Cascade)
+  
+  evidenceType         EvidenceType
+  url                  String?   // PR link, commit URL, etc.
+  description          String?
+  attachments          Json?     // Array of attachment metadata
+  
+  // Old/new values for tracking changes
+  previousValue        String?   // e.g., old image tag
+  newValue             String?   // e.g., new image tag
+  
+  createdById          String
+  createdBy            User      @relation("EvidenceCreatedBy", fields: [createdById], references: [id])
+  createdAt            DateTime  @default(now())
+  
+  @@index([scanVulnerabilityId])
+  @@index([evidenceType])
+}
+
+enum EvidenceType {
+  PR_LINK
+  COMMIT
+  IMAGE_TAG_CHANGE
+  PACKAGE_UPGRADE
+  PATCH_APPLIED
+  CONFIG_CHANGE
+  WORKAROUND
+  DOCUMENTATION
+  OTHER
+}
+
+// ============================================
+// Phase 4: DevOps Integration Models
+// ============================================
+
+model GitIntegration {
+  id               String    @id @default(uuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  provider         GitProvider
+  name             String
+  isActive         Boolean   @default(true)
+  
+  // Connection settings
+  baseUrl          String?   // For self-hosted (GitLab, GitHub Enterprise)
+  apiToken         String    // Encrypted
+  
+  // Default settings
+  defaultBranch    String    @default("main")
+  autoPrGeneration Boolean   @default(false)
+  
+  repositories     GitRepository[]
+  
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  
+  @@index([organizationId])
+}
+
+enum GitProvider {
+  GITHUB
+  GITLAB
+  BITBUCKET
+  AZURE_DEVOPS
+}
+
+model GitRepository {
+  id               String    @id @default(uuid())
+  integrationId    String
+  integration      GitIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  
+  projectId        String?
+  project          Project?  @relation(fields: [projectId], references: [id])
+  
+  repoUrl          String
+  repoOwner        String
+  repoName         String
+  defaultBranch    String    @default("main")
+  
+  createdAt        DateTime  @default(now())
+  
+  @@index([integrationId])
+  @@index([projectId])
+}
+
+model IssueTrackerIntegration {
+  id               String    @id @default(uuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  provider         IssueTrackerProvider
+  name             String
+  isActive         Boolean   @default(true)
+  
+  // Connection settings
+  baseUrl          String
+  apiToken         String    // Encrypted
+  projectKey       String?   // Jira project key, Linear team ID, etc.
+  
+  // Auto-creation settings
+  autoCreateIssues Boolean   @default(false)
+  issueTemplate    Json?     // Template for auto-created issues
+  severityMapping  Json?     // Map vulnerability severity to issue priority
+  
+  linkedIssues     LinkedIssue[]
+  
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  
+  @@index([organizationId])
+}
+
+enum IssueTrackerProvider {
+  JIRA
+  LINEAR
+  GITHUB_ISSUES
+  GITLAB_ISSUES
+  AZURE_DEVOPS
+  ASANA
+}
+
+model LinkedIssue {
+  id                    String    @id @default(uuid())
+  integrationId         String
+  integration           IssueTrackerIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  
+  scanVulnerabilityId   String
+  scanVulnerability     ScanVulnerability @relation(fields: [scanVulnerabilityId], references: [id])
+  
+  externalId            String    // Issue ID in external system
+  externalUrl           String
+  status                String?
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@unique([integrationId, scanVulnerabilityId])
+  @@index([scanVulnerabilityId])
 }

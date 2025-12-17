@@ -13,6 +13,15 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { NormalizationModule } from './modules/normalization/normalization.module';
+import { IntegrationsModule } from './modules/integrations/integrations.module';
+import { AnalysisModule } from './modules/analysis/analysis.module';
+import { UserExperienceModule } from './modules/user-experience/user-experience.module';
+import { MultiOrgModule } from './modules/multi-org/multi-org.module';
+import { AutomationModule } from './modules/automation/automation.module';
+import { AiModule } from './modules/ai/ai.module';
+import { ComplianceModule } from './modules/compliance/compliance.module';
+import { OperationsModule } from './modules/operations/operations.module';
+import { InfrastructureModule } from './modules/infrastructure/infrastructure.module';
 
 @Module({
     imports: [
@@ -20,6 +29,7 @@ import { NormalizationModule } from './modules/normalization/normalization.modul
             isGlobal: true,
             envFilePath: ['.env.local', '.env'],
         }),
+        InfrastructureModule,
         PrismaModule,
         AuthModule,
         UsersModule,
@@ -33,6 +43,14 @@ import { NormalizationModule } from './modules/normalization/normalization.modul
         NotificationsModule,
         AuditModule,
         NormalizationModule,
+        IntegrationsModule,
+        AnalysisModule,
+        UserExperienceModule,
+        MultiOrgModule,
+        AutomationModule,
+        AiModule,
+        ComplianceModule,
+        OperationsModule,
     ],
 })
 export class AppModule { }
