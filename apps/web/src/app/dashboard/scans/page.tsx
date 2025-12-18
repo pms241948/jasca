@@ -44,8 +44,11 @@ function getSeverityBadge(severity: string, count: number) {
     );
 }
 
-function formatDate(dateString: string) {
-    return new Date(dateString).toLocaleString('ko-KR', {
+function formatDate(dateString?: string | null) {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return '-';
+    return date.toLocaleString('ko-KR', {
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
@@ -83,7 +86,7 @@ export default function ScansPage() {
         );
     }
 
-    const scans = data?.data || [];
+    const scans = data?.results || [];
 
     return (
         <div className="space-y-6">
@@ -191,7 +194,7 @@ export default function ScansPage() {
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                                             <Calendar className="h-4 w-4" />
-                                            {formatDate(scan.startedAt)}
+                                            {formatDate((scan as any).createdAt || scan.startedAt)}
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 text-right">

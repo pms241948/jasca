@@ -45,7 +45,7 @@ export interface Scan {
 }
 
 export function useScans(projectId?: string) {
-    return useQuery<{ data: Scan[]; total: number }>({
+    return useQuery<{ results: Scan[]; total: number }>({
         queryKey: ['scans', projectId],
         queryFn: () => {
             const params = new URLSearchParams();
@@ -105,6 +105,12 @@ export function useUploadScan() {
                 ? `${API_BASE}/scans/upload?projectId=${projectId}`
                 : `${API_BASE}/scans/upload`;
 
+            console.log('[Upload Debug] URL:', url);
+            console.log('[Upload Debug] FormData entries:');
+            for (const [key, value] of formData.entries()) {
+                console.log(`  ${key}:`, value);
+            }
+
             const response = await fetch(url, {
                 method: 'POST',
                 headers: {
@@ -112,6 +118,8 @@ export function useUploadScan() {
                 },
                 body: formData,
             });
+
+            console.log('[Upload Debug] Response status:', response.status);
 
             if (!response.ok) {
                 const error = await response.json().catch(() => ({ message: 'Upload failed' }));
@@ -121,8 +129,10 @@ export function useUploadScan() {
             return response.json();
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['scans'] });
-            queryClient.invalidateQueries({ queryKey: ['projects'] });
+            // Use exact:false to invalidate all queries starting with 'scans' regardless of projectId
+            queryClient.invalidateQueries({ queryKey: ['scans'], exact: false });
+            queryClient.invalidateQueries({ queryKey: ['project-scans'], exact: false });
+            queryClient.invalidateQueries({ queryKey: ['projects'], exact: false });
         },
     });
 }
