@@ -15,6 +15,7 @@ import {
     Edit3,
 } from 'lucide-react';
 import { useAiSettings, useUpdateSettings, type AiSettings } from '@/lib/api-hooks';
+import { useAuthStore } from '@/stores/auth-store';
 
 const defaultConfig: AiSettings = {
     provider: 'openai',
@@ -129,10 +130,12 @@ export default function AiSettingsPage() {
         setTestResult(null);
 
         try {
+            const token = useAuthStore.getState().accessToken;
             const response = await fetch('/api/ai/test-connection', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
                 },
                 credentials: 'include',
                 body: JSON.stringify({
@@ -171,7 +174,11 @@ export default function AiSettingsPage() {
 
         setFetchingModels(true);
         try {
+            const token = useAuthStore.getState().accessToken;
             const response = await fetch(`/api/ai/ollama/models?apiUrl=${encodeURIComponent(config.apiUrl)}`, {
+                headers: {
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
                 credentials: 'include',
             });
             const result = await response.json();
@@ -199,6 +206,7 @@ export default function AiSettingsPage() {
 
         setFetchingModels(true);
         try {
+            const token = useAuthStore.getState().accessToken;
             const url = new URL('/api/ai/vllm/models', window.location.origin);
             url.searchParams.set('apiUrl', config.apiUrl);
             if (config.apiKey) {
@@ -206,6 +214,9 @@ export default function AiSettingsPage() {
             }
 
             const response = await fetch(url.toString(), {
+                headers: {
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
                 credentials: 'include',
             });
             const result = await response.json();
