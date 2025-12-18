@@ -30,6 +30,9 @@ const defaultSettings: Record<string, unknown> = {
         scanners: ['vuln', 'secret', 'config'],
     },
     ai: {
+        provider: 'openai',
+        apiUrl: 'https://api.openai.com/v1',
+        apiKey: '',
         summaryModel: 'gpt-4',
         remediationModel: 'gpt-4-turbo',
         maxTokens: 1024,
@@ -37,6 +40,7 @@ const defaultSettings: Record<string, unknown> = {
         enableAutoSummary: true,
         enableRemediationGuide: true,
     },
+
 };
 
 @Injectable()

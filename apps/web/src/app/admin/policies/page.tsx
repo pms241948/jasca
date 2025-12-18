@@ -11,6 +11,7 @@ import {
     PowerOff,
     X,
     AlertTriangle,
+    Loader2,
 } from 'lucide-react';
 import {
     usePolicies,
@@ -34,8 +35,7 @@ export default function AdminPoliciesPage() {
     const [formData, setFormData] = useState({
         name: '',
         description: '',
-        scope: 'ORGANIZATION' as 'ORGANIZATION' | 'PROJECT',
-        enabled: true,
+        isActive: true,
     });
 
     const filteredPolicies = (policies || []).filter((p) =>
@@ -44,16 +44,15 @@ export default function AdminPoliciesPage() {
     );
 
     const openCreateModal = () => {
-        setFormData({ name: '', description: '', scope: 'ORGANIZATION', enabled: true });
+        setFormData({ name: '', description: '', isActive: true });
         setShowCreateModal(true);
     };
 
     const openEditModal = (policy: Policy) => {
         setFormData({
-            name: policy.name,
+            name: policy.name || '',
             description: policy.description || '',
-            scope: policy.scope,
-            enabled: policy.enabled,
+            isActive: policy.isActive ?? true,
         });
         setEditingPolicy(policy);
     };
@@ -93,16 +92,22 @@ export default function AdminPoliciesPage() {
 
     const togglePolicy = async (policy: Policy) => {
         try {
-            await updateMutation.mutateAsync({ id: policy.id, enabled: !policy.enabled });
+            await updateMutation.mutateAsync({ id: policy.id, isActive: !policy.isActive });
         } catch (err) {
             console.error('Failed to toggle policy:', err);
         }
     };
 
+    const getScopeLabel = (policy: Policy) => {
+        if (policy.projectId) return '프로젝트';
+        if (policy.organizationId) return '조직';
+        return '전역';
+    };
+
     if (isLoading) {
         return (
             <div className="flex items-center justify-center h-64">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600" />
+                <Loader2 className="h-8 w-8 animate-spin text-red-600" />
             </div>
         );
     }
@@ -152,28 +157,24 @@ export default function AdminPoliciesPage() {
                 {filteredPolicies.map((policy) => (
                     <div
                         key={policy.id}
-                        className={`bg-white dark:bg-slate-800 rounded-xl shadow-sm border ${policy.enabled
-                                ? 'border-slate-200 dark:border-slate-700'
-                                : 'border-slate-200 dark:border-slate-700 opacity-60'
+                        className={`bg-white dark:bg-slate-800 rounded-xl shadow-sm border ${policy.isActive
+                            ? 'border-slate-200 dark:border-slate-700'
+                            : 'border-slate-200 dark:border-slate-700 opacity-60'
                             } p-6`}
                     >
                         <div className="flex items-start justify-between">
                             <div className="flex items-start gap-4">
-                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${policy.enabled
-                                        ? 'bg-red-100 dark:bg-red-900/30'
-                                        : 'bg-slate-100 dark:bg-slate-700'
+                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${policy.isActive
+                                    ? 'bg-red-100 dark:bg-red-900/30'
+                                    : 'bg-slate-100 dark:bg-slate-700'
                                     }`}>
-                                    <Shield className={`h-5 w-5 ${policy.enabled ? 'text-red-600' : 'text-slate-400'
-                                        }`} />
+                                    <Shield className={`h-5 w-5 ${policy.isActive ? 'text-red-600' : 'text-slate-400'}`} />
                                 </div>
                                 <div>
                                     <div className="flex items-center gap-2">
                                         <h3 className="font-semibold text-slate-900 dark:text-white">{policy.name}</h3>
-                                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${policy.scope === 'ORGANIZATION'
-                                                ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                                                : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                                            }`}>
-                                            {policy.scope === 'ORGANIZATION' ? '조직' : '프로젝트'}
+                                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                                            {getScopeLabel(policy)}
                                         </span>
                                     </div>
                                     <p className="text-sm text-slate-500 mt-1">{policy.description}</p>
@@ -183,13 +184,13 @@ export default function AdminPoliciesPage() {
                                 <button
                                     onClick={() => togglePolicy(policy)}
                                     disabled={updateMutation.isPending}
-                                    className={`p-2 rounded-lg transition-colors ${policy.enabled
-                                            ? 'text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20'
-                                            : 'text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                    className={`p-2 rounded-lg transition-colors ${policy.isActive
+                                        ? 'text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20'
+                                        : 'text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
                                         }`}
-                                    title={policy.enabled ? '비활성화' : '활성화'}
+                                    title={policy.isActive ? '비활성화' : '활성화'}
                                 >
-                                    {policy.enabled ? <Power className="h-5 w-5" /> : <PowerOff className="h-5 w-5" />}
+                                    {policy.isActive ? <Power className="h-5 w-5" /> : <PowerOff className="h-5 w-5" />}
                                 </button>
                                 <button
                                     onClick={() => openEditModal(policy)}
@@ -210,17 +211,17 @@ export default function AdminPoliciesPage() {
                         {/* Rules Preview */}
                         {policy.rules && policy.rules.length > 0 && (
                             <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
-                                <p className="text-xs text-slate-500 mb-2">규칙:</p>
+                                <p className="text-xs text-slate-500 mb-2">규칙 {policy.rules.length}개:</p>
                                 <div className="flex flex-wrap gap-2">
-                                    {policy.rules.map((rule) => (
+                                    {policy.rules.slice(0, 5).map((rule) => (
                                         <span
                                             key={rule.id}
                                             className={`px-2 py-1 rounded text-xs ${rule.action === 'BLOCK'
-                                                    ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                                    : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+                                                ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                                : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
                                                 }`}
                                         >
-                                            {rule.ruleType} {rule.condition} {rule.value} → {rule.action}
+                                            {rule.ruleType} → {rule.action}
                                         </span>
                                     ))}
                                 </div>
@@ -284,28 +285,15 @@ export default function AdminPoliciesPage() {
                                     className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
                                 />
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                    적용 범위
-                                </label>
-                                <select
-                                    value={formData.scope}
-                                    onChange={(e) => setFormData({ ...formData, scope: e.target.value as 'ORGANIZATION' | 'PROJECT' })}
-                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-                                >
-                                    <option value="ORGANIZATION">조직 전체</option>
-                                    <option value="PROJECT">프로젝트</option>
-                                </select>
-                            </div>
                             <div className="flex items-center gap-2">
                                 <input
                                     type="checkbox"
-                                    id="enabled"
-                                    checked={formData.enabled}
-                                    onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
+                                    id="isActive"
+                                    checked={formData.isActive}
+                                    onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
                                     className="rounded border-slate-300 text-red-600 focus:ring-red-500"
                                 />
-                                <label htmlFor="enabled" className="text-sm text-slate-700 dark:text-slate-300">
+                                <label htmlFor="isActive" className="text-sm text-slate-700 dark:text-slate-300">
                                     정책 활성화
                                 </label>
                             </div>

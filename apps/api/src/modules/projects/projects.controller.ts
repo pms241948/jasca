@@ -27,7 +27,19 @@ export class ProjectsController {
     @ApiOperation({ summary: 'Get all projects' })
     @ApiQuery({ name: 'organizationId', required: false })
     async findAll(@Query('organizationId') organizationId?: string) {
-        return this.projectsService.findAll(organizationId);
+        const data = await this.projectsService.findAll(organizationId);
+        return { data, total: data.length };
+    }
+
+
+    @Get(':id/vulnerability-trend')
+    @ApiOperation({ summary: 'Get vulnerability trend for a project' })
+    @ApiQuery({ name: 'days', required: false })
+    async getVulnerabilityTrend(
+        @Param('id') id: string,
+        @Query('days') days?: string,
+    ) {
+        return this.projectsService.getVulnerabilityTrend(id, parseInt(days || '30'));
     }
 
     @Get(':id')
@@ -35,6 +47,7 @@ export class ProjectsController {
     async findById(@Param('id') id: string) {
         return this.projectsService.findById(id);
     }
+
 
     @Post()
     @Roles('ORG_ADMIN', 'PROJECT_ADMIN')

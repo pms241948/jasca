@@ -211,14 +211,16 @@ export interface Policy {
     id: string;
     name: string;
     description?: string;
-    scope: 'ORGANIZATION' | 'PROJECT';
-    enabled: boolean;
+    isActive: boolean;
     organizationId?: string;
     projectId?: string;
     rules: PolicyRule[];
+    organization?: { id: string; name: string };
+    project?: { id: string; name: string };
     createdAt: string;
     updatedAt: string;
 }
+
 
 export interface PolicyRule {
     id: string;
@@ -1004,6 +1006,9 @@ export interface TrivySettings {
 }
 
 export interface AiSettings {
+    provider: 'openai' | 'anthropic' | 'vllm' | 'ollama' | 'custom';
+    apiUrl?: string;
+    apiKey?: string;
     summaryModel: string;
     remediationModel: string;
     maxTokens: number;
@@ -1011,6 +1016,7 @@ export interface AiSettings {
     enableAutoSummary: boolean;
     enableRemediationGuide: boolean;
 }
+
 
 export function useWorkflowSettings() {
     return useSettings<WorkflowSettings>('workflows');
