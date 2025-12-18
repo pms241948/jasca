@@ -39,11 +39,20 @@ export class PoliciesController {
         return this.policiesService.findAll(organizationId, projectId);
     }
 
+    // Exceptions - must be before :id route to avoid being caught by it
+    @Get('exceptions')
+    @ApiOperation({ summary: 'Get all exceptions' })
+    @ApiQuery({ name: 'status', required: false })
+    async findExceptions(@Query('status') status?: string) {
+        return this.policiesService.findExceptions(status);
+    }
+
     @Get(':id')
     @ApiOperation({ summary: 'Get policy by ID' })
     async findById(@Param('id') id: string) {
         return this.policiesService.findById(id);
     }
+
 
     @Post()
     @Roles('ORG_ADMIN', 'PROJECT_ADMIN')
@@ -88,8 +97,8 @@ export class PoliciesController {
         return this.policyEngine.evaluate(body.projectId, body.scanResultId);
     }
 
-    // Exceptions
     @Post(':id/exceptions')
+
     @ApiOperation({ summary: 'Request an exception' })
     async requestException(
         @Param('id') policyId: string,

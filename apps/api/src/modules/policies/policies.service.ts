@@ -114,7 +114,25 @@ export class PoliciesService {
     }
 
     // Exception management
+    async findExceptions(status?: string) {
+        const where: any = {};
+        if (status) {
+            where.status = status.toUpperCase();
+        }
+
+        return this.prisma.policyException.findMany({
+            where,
+            include: {
+                policy: { select: { id: true, name: true } },
+                requestedBy: { select: { id: true, name: true, email: true } },
+                approvedBy: { select: { id: true, name: true, email: true } },
+            },
+            orderBy: { createdAt: 'desc' },
+        });
+    }
+
     async requestException(data: {
+
         policyId: string;
         exceptionType: string;
         targetValue: string;
