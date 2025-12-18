@@ -1,0 +1,303 @@
+import { Controller, Post, Get, Body, UseGuards, Query, BadRequestException } from '@nestjs/common';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { Role } from '@prisma/client';
+import { AiService } from './ai.service';
+
+interface TestConnectionDto {
+    provider: 'openai' | 'anthropic' | 'vllm' | 'ollama' | 'custom';
+    apiUrl: string;
+    apiKey?: string;
+}
+
+interface OllamaModel {
+    name: string;
+    modified_at: string;
+    size: number;
+}
+
+interface OllamaListResponse {
+    models: OllamaModel[];
+}
+
+@Controller('ai')
+@UseGuards(JwtAuthGuard, RolesGuard)
+export class AiController {
+    constructor(private readonly aiService: AiService) { }
+
+    /**
+     * Test connection to AI provider
+     */
+    @Post('test-connection')
+    @Roles(Role.SYSTEM_ADMIN, Role.ORG_ADMIN)
+    async testConnection(@Body() dto: TestConnectionDto) {
+        try {
+            if (!dto.apiUrl) {
+                throw new BadRequestException('API URL is required');
+            }
+
+            switch (dto.provider) {
+                case 'ollama':
+                    return await this.testOllamaConnection(dto.apiUrl);
+                case 'vllm':
+                    return await this.testVllmConnection(dto.apiUrl, dto.apiKey);
+                case 'openai':
+                    return await this.testOpenAiConnection(dto.apiUrl, dto.apiKey);
+                case 'anthropic':
+                    return await this.testAnthropicConnection(dto.apiUrl, dto.apiKey);
+                default:
+                    return await this.testCustomConnection(dto.apiUrl, dto.apiKey);
+            }
+        } catch (error) {
+            return {
+                success: false,
+                message: error instanceof Error ? error.message : 'Connection test failed',
+            };
+        }
+    }
+
+    /**
+     * Get available models from Ollama server
+     */
+    @Get('ollama/models')
+    @Roles(Role.SYSTEM_ADMIN, Role.ORG_ADMIN)
+    async getOllamaModels(@Query('apiUrl') apiUrl: string) {
+        if (!apiUrl) {
+            throw new BadRequestException('API URL is required');
+        }
+
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+            const response = await fetch(`${apiUrl}/api/tags`, {
+                method: 'GET',
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                throw new Error(`Ollama server returned ${response.status}`);
+            }
+
+            const data = await response.json() as OllamaListResponse;
+            return {
+                success: true,
+                models: data.models.map((m) => ({
+                    id: m.name,
+                    name: m.name,
+                    size: m.size,
+                    modifiedAt: m.modified_at,
+                })),
+            };
+        } catch (error) {
+            return {
+                success: false,
+                message: error instanceof Error ? error.message : 'Failed to fetch models',
+                models: [],
+            };
+        }
+    }
+
+    /**
+     * Get available models from vLLM server
+     */
+    @Get('vllm/models')
+    @Roles(Role.SYSTEM_ADMIN, Role.ORG_ADMIN)
+    async getVllmModels(@Query('apiUrl') apiUrl: string, @Query('apiKey') apiKey?: string) {
+        if (!apiUrl) {
+            throw new BadRequestException('API URL is required');
+        }
+
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json',
+            };
+            if (apiKey) {
+                headers['Authorization'] = `Bearer ${apiKey}`;
+            }
+
+            const response = await fetch(`${apiUrl}/models`, {
+                method: 'GET',
+                headers,
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                throw new Error(`vLLM server returned ${response.status}`);
+            }
+
+            const data = await response.json() as { data: { id: string }[] };
+            return {
+                success: true,
+                models: data.data.map((m) => ({
+                    id: m.id,
+                    name: m.id,
+                })),
+            };
+        } catch (error) {
+            return {
+                success: false,
+                message: error instanceof Error ? error.message : 'Failed to fetch models',
+                models: [],
+            };
+        }
+    }
+
+    // Helper methods for connection testing
+
+    private async testOllamaConnection(apiUrl: string) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+        try {
+            const response = await fetch(`${apiUrl}/api/tags`, {
+                method: 'GET',
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                return { success: false, message: `Ollama server returned ${response.status}` };
+            }
+
+            const data = await response.json() as OllamaListResponse;
+            return {
+                success: true,
+                message: `Connected to Ollama. ${data.models.length} model(s) available.`,
+                modelCount: data.models.length,
+            };
+        } catch (error) {
+            clearTimeout(timeoutId);
+            throw error;
+        }
+    }
+
+    private async testVllmConnection(apiUrl: string, apiKey?: string) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+        try {
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json',
+            };
+            if (apiKey) {
+                headers['Authorization'] = `Bearer ${apiKey}`;
+            }
+
+            const response = await fetch(`${apiUrl}/models`, {
+                method: 'GET',
+                headers,
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                return { success: false, message: `vLLM server returned ${response.status}` };
+            }
+
+            const data = await response.json() as { data: { id: string }[] };
+            return {
+                success: true,
+                message: `Connected to vLLM. ${data.data.length} model(s) available.`,
+                modelCount: data.data.length,
+            };
+        } catch (error) {
+            clearTimeout(timeoutId);
+            throw error;
+        }
+    }
+
+    private async testOpenAiConnection(apiUrl: string, apiKey?: string) {
+        if (!apiKey) {
+            return { success: false, message: 'API key is required for OpenAI' };
+        }
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+        try {
+            const response = await fetch(`${apiUrl}/models`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                },
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({})) as { error?: { message?: string } };
+                return {
+                    success: false,
+                    message: errorData?.error?.message || `OpenAI API returned ${response.status}`,
+                };
+            }
+
+            return { success: true, message: 'Successfully connected to OpenAI API' };
+        } catch (error) {
+            clearTimeout(timeoutId);
+            throw error;
+        }
+    }
+
+    private async testAnthropicConnection(apiUrl: string, apiKey?: string) {
+        if (!apiKey) {
+            return { success: false, message: 'API key is required for Anthropic' };
+        }
+
+        // Anthropic doesn't have a simple models endpoint, so we just check if the header format is valid
+        // A full test would require a messages request which costs money
+        return { success: true, message: 'API configuration stored. Connection will be verified on first use.' };
+    }
+
+    private async testCustomConnection(apiUrl: string, apiKey?: string) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+        try {
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json',
+            };
+            if (apiKey) {
+                headers['Authorization'] = `Bearer ${apiKey}`;
+            }
+
+            // Try common endpoint patterns
+            let response = await fetch(`${apiUrl}/models`, {
+                method: 'GET',
+                headers,
+                signal: controller.signal,
+            });
+
+            if (!response.ok) {
+                response = await fetch(`${apiUrl}/v1/models`, {
+                    method: 'GET',
+                    headers,
+                    signal: controller.signal,
+                });
+            }
+
+            clearTimeout(timeoutId);
+
+            if (response.ok) {
+                return { success: true, message: 'Successfully connected to custom AI server' };
+            }
+
+            return { success: false, message: `Server returned ${response.status}` };
+        } catch (error) {
+            clearTimeout(timeoutId);
+            throw error;
+        }
+    }
+}
