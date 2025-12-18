@@ -3,115 +3,150 @@
 import { useState } from 'react';
 import {
     Users,
+    Plus,
     Search,
-    MoreVertical,
+    Edit,
+    Trash2,
     Shield,
     ShieldCheck,
-    ShieldX,
-    Mail,
-    Calendar,
-    Filter,
+    ShieldOff,
+    X,
+    AlertTriangle,
 } from 'lucide-react';
+import {
+    useUsers,
+    useCreateUser,
+    useUpdateUser,
+    useDeleteUser,
+    useOrganizations,
+    User,
+} from '@/lib/api-hooks';
 
-// Mock users
-const mockUsers = [
-    {
-        id: '1',
-        name: '김보안',
-        email: 'security@acme.com',
-        role: 'SYSTEM_ADMIN',
-        organization: 'ACME Corp',
-        mfaEnabled: true,
-        status: 'ACTIVE',
-        lastLogin: '2024-12-17T10:30:00Z',
-    },
-    {
-        id: '2',
-        name: '이개발',
-        email: 'dev@acme.com',
-        role: 'DEVELOPER',
-        organization: 'ACME Corp',
-        mfaEnabled: true,
-        status: 'ACTIVE',
-        lastLogin: '2024-12-17T09:15:00Z',
-    },
-    {
-        id: '3',
-        name: '박매니저',
-        email: 'manager@techstart.com',
-        role: 'ORG_ADMIN',
-        organization: 'TechStart Inc',
-        mfaEnabled: false,
-        status: 'ACTIVE',
-        lastLogin: '2024-12-16T18:45:00Z',
-    },
-    {
-        id: '4',
-        name: '최관리자',
-        email: 'admin@securenet.com',
-        role: 'ORG_ADMIN',
-        organization: 'SecureNet',
-        mfaEnabled: true,
-        status: 'INACTIVE',
-        lastLogin: '2024-12-10T14:20:00Z',
-    },
-];
+const roleLabels: Record<string, string> = {
+    SYSTEM_ADMIN: 'System Admin',
+    ORG_ADMIN: 'Org Admin',
+    SECURITY_ENGINEER: 'Security Engineer',
+    DEVELOPER: 'Developer',
+    VIEWER: 'Viewer',
+};
 
-function getRoleBadge(role: string) {
-    const config: Record<string, { label: string; color: string }> = {
-        SYSTEM_ADMIN: { label: 'System Admin', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
-        ORG_ADMIN: { label: 'Org Admin', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' },
-        SECURITY_ENGINEER: { label: 'Security Engineer', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
-        DEVELOPER: { label: 'Developer', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-        VIEWER: { label: 'Viewer', color: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300' },
-    };
-    const { label, color } = config[role] || { label: role, color: 'bg-slate-100 text-slate-700' };
-    return <span className={`px-2 py-1 rounded text-xs font-medium ${color}`}>{label}</span>;
-}
+const statusLabels: Record<string, { label: string; color: string }> = {
+    ACTIVE: { label: '활성', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+    INACTIVE: { label: '비활성', color: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300' },
+    PENDING: { label: '대기', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' },
+};
 
-function getStatusBadge(status: string) {
-    return status === 'ACTIVE' ? (
-        <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded text-xs font-medium">
-            <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
-            활성
-        </span>
-    ) : (
-        <span className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400 rounded text-xs font-medium">
-            <span className="w-1.5 h-1.5 bg-slate-400 rounded-full" />
-            비활성
-        </span>
-    );
-}
+export default function AdminUsersPage() {
+    const { data: users, isLoading, error } = useUsers();
+    const { data: organizations } = useOrganizations();
+    const createMutation = useCreateUser();
+    const updateMutation = useUpdateUser();
+    const deleteMutation = useDeleteUser();
 
-function formatDate(dateString: string) {
-    return new Date(dateString).toLocaleDateString('ko-KR', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-    });
-}
-
-export default function UsersPage() {
     const [searchQuery, setSearchQuery] = useState('');
-    const [roleFilter, setRoleFilter] = useState<string>('');
+    const [roleFilter, setRoleFilter] = useState('');
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [editingUser, setEditingUser] = useState<User | null>(null);
 
-    const filteredUsers = mockUsers.filter(user => {
+    // Form state
+    const [formData, setFormData] = useState({
+        name: '',
+        email: '',
+        password: '',
+        role: 'DEVELOPER',
+        organizationId: '',
+    });
+
+    const filteredUsers = (users || []).filter((user) => {
         const matchesSearch = user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
             user.email.toLowerCase().includes(searchQuery.toLowerCase());
         const matchesRole = !roleFilter || user.role === roleFilter;
         return matchesSearch && matchesRole;
     });
 
+    const openCreateModal = () => {
+        setFormData({ name: '', email: '', password: '', role: 'DEVELOPER', organizationId: '' });
+        setShowCreateModal(true);
+    };
+
+    const openEditModal = (user: User) => {
+        setFormData({
+            name: user.name,
+            email: user.email,
+            password: '',
+            role: user.role,
+            organizationId: user.organizationId || '',
+        });
+        setEditingUser(user);
+    };
+
+    const closeModals = () => {
+        setShowCreateModal(false);
+        setEditingUser(null);
+    };
+
+    const handleCreate = async () => {
+        try {
+            await createMutation.mutateAsync(formData);
+            closeModals();
+        } catch (err) {
+            console.error('Failed to create user:', err);
+        }
+    };
+
+    const handleUpdate = async () => {
+        if (!editingUser) return;
+        try {
+            await updateMutation.mutateAsync({ id: editingUser.id, name: formData.name, role: formData.role });
+            closeModals();
+        } catch (err) {
+            console.error('Failed to update user:', err);
+        }
+    };
+
+    const handleDelete = async (id: string) => {
+        if (!confirm('정말 이 사용자를 삭제하시겠습니까?')) return;
+        try {
+            await deleteMutation.mutateAsync(id);
+        } catch (err) {
+            console.error('Failed to delete user:', err);
+        }
+    };
+
+    if (isLoading) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600" />
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg p-4 flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5" />
+                사용자 목록을 불러오는데 실패했습니다.
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div>
-                <h1 className="text-2xl font-bold text-slate-900 dark:text-white">사용자 관리</h1>
-                <p className="text-slate-600 dark:text-slate-400 mt-1">
-                    {mockUsers.length}명의 사용자
-                </p>
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white">사용자 관리</h1>
+                    <p className="text-slate-600 dark:text-slate-400 mt-1">
+                        {users?.length || 0}명의 사용자
+                    </p>
+                </div>
+                <button
+                    onClick={openCreateModal}
+                    className="flex items-center gap-2 px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                    <Plus className="h-4 w-4" />
+                    사용자 추가
+                </button>
             </div>
 
             {/* Filters */}
@@ -120,7 +155,7 @@ export default function UsersPage() {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
                     <input
                         type="text"
-                        placeholder="이름 또는 이메일 검색..."
+                        placeholder="사용자 검색..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg pl-10 pr-4 py-2 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500"
@@ -132,11 +167,9 @@ export default function UsersPage() {
                     className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
                 >
                     <option value="">모든 역할</option>
-                    <option value="SYSTEM_ADMIN">System Admin</option>
-                    <option value="ORG_ADMIN">Org Admin</option>
-                    <option value="SECURITY_ENGINEER">Security Engineer</option>
-                    <option value="DEVELOPER">Developer</option>
-                    <option value="VIEWER">Viewer</option>
+                    {Object.entries(roleLabels).map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
+                    ))}
                 </select>
             </div>
 
@@ -149,19 +182,16 @@ export default function UsersPage() {
                                 사용자
                             </th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                                조직
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                                 역할
                             </th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                                MFA
+                                조직
                             </th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                                 상태
                             </th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                                마지막 로그인
+                                MFA
                             </th>
                             <th className="px-6 py-3"></th>
                         </tr>
@@ -171,9 +201,9 @@ export default function UsersPage() {
                             <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
                                 <td className="px-6 py-4">
                                     <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 bg-slate-200 dark:bg-slate-700 rounded-full flex items-center justify-center">
-                                            <span className="text-slate-600 dark:text-slate-400 font-medium">
-                                                {user.name[0]}
+                                        <div className="w-10 h-10 bg-gradient-to-br from-red-100 to-red-200 dark:from-red-900/30 dark:to-red-800/30 rounded-full flex items-center justify-center">
+                                            <span className="text-sm font-medium text-red-600 dark:text-red-400">
+                                                {user.name.charAt(0).toUpperCase()}
                                             </span>
                                         </div>
                                         <div>
@@ -182,35 +212,150 @@ export default function UsersPage() {
                                         </div>
                                     </div>
                                 </td>
+                                <td className="px-6 py-4">
+                                    <span className="px-2 py-1 bg-slate-100 dark:bg-slate-700 rounded text-sm">
+                                        {roleLabels[user.role] || user.role}
+                                    </span>
+                                </td>
                                 <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                                    {user.organization}
+                                    {user.organization?.name || '-'}
                                 </td>
                                 <td className="px-6 py-4">
-                                    {getRoleBadge(user.role)}
+                                    <span className={`px-2 py-1 rounded text-xs font-medium ${statusLabels[user.status]?.color || ''}`}>
+                                        {statusLabels[user.status]?.label || user.status}
+                                    </span>
                                 </td>
                                 <td className="px-6 py-4">
                                     {user.mfaEnabled ? (
                                         <ShieldCheck className="h-5 w-5 text-green-500" />
                                     ) : (
-                                        <ShieldX className="h-5 w-5 text-red-500" />
+                                        <ShieldOff className="h-5 w-5 text-slate-300" />
                                     )}
                                 </td>
                                 <td className="px-6 py-4">
-                                    {getStatusBadge(user.status)}
-                                </td>
-                                <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                                    {formatDate(user.lastLogin)}
-                                </td>
-                                <td className="px-6 py-4">
-                                    <button className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700">
-                                        <MoreVertical className="h-4 w-4" />
-                                    </button>
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            onClick={() => openEditModal(user)}
+                                            className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                                        >
+                                            <Edit className="h-4 w-4" />
+                                        </button>
+                                        <button
+                                            onClick={() => handleDelete(user.id)}
+                                            disabled={deleteMutation.isPending}
+                                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-50"
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
             </div>
+
+            {/* Create/Edit Modal */}
+            {(showCreateModal || editingUser) && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-lg">
+                        <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
+                            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                                {editingUser ? '사용자 수정' : '사용자 추가'}
+                            </h3>
+                            <button onClick={closeModals} className="text-slate-400 hover:text-slate-600">
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                    이름 *
+                                </label>
+                                <input
+                                    type="text"
+                                    value={formData.name}
+                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                    이메일 *
+                                </label>
+                                <input
+                                    type="email"
+                                    value={formData.email}
+                                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                                    disabled={!!editingUser}
+                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50"
+                                />
+                            </div>
+                            {!editingUser && (
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                        비밀번호 *
+                                    </label>
+                                    <input
+                                        type="password"
+                                        value={formData.password}
+                                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                                    />
+                                </div>
+                            )}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                    역할
+                                </label>
+                                <select
+                                    value={formData.role}
+                                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                                >
+                                    {Object.entries(roleLabels).map(([value, label]) => (
+                                        <option key={value} value={value}>{label}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            {!editingUser && organizations && (
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                        조직
+                                    </label>
+                                    <select
+                                        value={formData.organizationId}
+                                        onChange={(e) => setFormData({ ...formData, organizationId: e.target.value })}
+                                        className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                                    >
+                                        <option value="">조직 선택...</option>
+                                        {organizations.map((org) => (
+                                            <option key={org.id} value={org.id}>{org.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex justify-end gap-2 p-6 border-t border-slate-200 dark:border-slate-700">
+                            <button
+                                onClick={closeModals}
+                                className="px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700"
+                            >
+                                취소
+                            </button>
+                            <button
+                                onClick={editingUser ? handleUpdate : handleCreate}
+                                disabled={createMutation.isPending || updateMutation.isPending}
+                                className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                            >
+                                {createMutation.isPending || updateMutation.isPending ? '처리 중...' : editingUser ? '저장' : '추가'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -283,9 +283,49 @@
   @apply bg-slate-300 dark:bg-slate-600 rounded hover:bg-slate-400 dark:hover:bg-slate-500;
 }
 
-/* Print styles */
 @media print {
   .no-print {
     display: none !important;
   }
+}
+
+/* Code syntax highlighting */
+.code-comment {
+  color: #64748b;
+  /* slate-500 */
+}
+
+.code-variable {
+  color: #22d3ee;
+  /* cyan-400 */
+}
+
+.code-keyword {
+  color: #4ade80;
+  /* green-400 */
+}
+
+.code-flag {
+  color: #facc15;
+  /* yellow-400 */
+}
+
+.code-string {
+  color: #fb923c;
+  /* orange-400 */
+}
+
+.code-key {
+  color: #22d3ee;
+  /* cyan-400 */
+}
+
+.code-boolean {
+  color: #c084fc;
+  /* purple-400 */
+}
+
+.code-number {
+  color: #4ade80;
+  /* green-400 */
 }

@@ -88,3 +88,11 @@ export {
     CvssTooltip,
 } from './tooltip';
 export type { TooltipProps, InfoTooltipProps, CveTooltipProps, CvssTooltipProps } from './tooltip';
+
+// CodeBlock
+export { CodeBlock } from './code-block';
+export type { CodeBlockProps } from './code-block';
+
+// StepNavigator
+export { StepNavigator, StepNavigatorVertical } from './step-navigator';
+export type { Step, StepNavigatorProps } from './step-navigator';

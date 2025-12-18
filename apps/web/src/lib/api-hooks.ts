@@ -278,3 +278,244 @@ export function useProjectVulnerabilityTrend(projectId: string, days = 30) {
         enabled: !!projectId,
     });
 }
+
+export function useCreateProject() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ organizationId, ...data }: { organizationId: string; name: string; slug?: string; description?: string }) =>
+            authFetch(`${API_BASE}/projects?organizationId=${organizationId}`, {
+                method: 'POST',
+                body: JSON.stringify(data),
+            }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['projects'] });
+        },
+    });
+}
+
+export function useUpdateProject() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ id, ...data }: { id: string; name?: string; description?: string }) =>
+            authFetch(`${API_BASE}/projects/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify(data),
+            }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['projects'] });
+        },
+    });
+}
+
+export function useDeleteProject() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (id: string) =>
+            authFetch(`${API_BASE}/projects/${id}`, { method: 'DELETE' }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['projects'] });
+        },
+    });
+}
+
+// ============ Organizations API ============
+
+export interface Organization {
+    id: string;
+    name: string;
+    slug: string;
+    description?: string;
+    createdAt: string;
+    updatedAt: string;
+    _count?: {
+        users: number;
+        projects: number;
+    };
+}
+
+export function useOrganizations() {
+    return useQuery<Organization[]>({
+        queryKey: ['organizations'],
+        queryFn: () => authFetch(`${API_BASE}/organizations`),
+    });
+}
+
+export function useOrganization(id: string) {
+    return useQuery<Organization>({
+        queryKey: ['organization', id],
+        queryFn: () => authFetch(`${API_BASE}/organizations/${id}`),
+        enabled: !!id,
+    });
+}
+
+export function useCreateOrganization() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (data: { name: string; slug?: string; description?: string }) =>
+            authFetch(`${API_BASE}/organizations`, {
+                method: 'POST',
+                body: JSON.stringify(data),
+            }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['organizations'] });
+        },
+    });
+}
+
+export function useUpdateOrganization() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ id, ...data }: { id: string; name?: string; description?: string }) =>
+            authFetch(`${API_BASE}/organizations/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify(data),
+            }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['organizations'] });
+        },
+    });
+}
+
+export function useDeleteOrganization() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (id: string) =>
+            authFetch(`${API_BASE}/organizations/${id}`, { method: 'DELETE' }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['organizations'] });
+        },
+    });
+}
+
+// ============ Users API ============
+
+export interface User {
+    id: string;
+    email: string;
+    name: string;
+    role: 'SYSTEM_ADMIN' | 'ORG_ADMIN' | 'SECURITY_ENGINEER' | 'DEVELOPER' | 'VIEWER';
+    status: 'ACTIVE' | 'INACTIVE' | 'PENDING';
+    mfaEnabled: boolean;
+    organizationId?: string;
+    organization?: { name: string };
+    createdAt: string;
+    lastLoginAt?: string;
+}
+
+export function useUsers(organizationId?: string) {
+    return useQuery<User[]>({
+        queryKey: ['users', organizationId],
+        queryFn: () => {
+            const params = new URLSearchParams();
+            if (organizationId) params.set('organizationId', organizationId);
+            return authFetch(`${API_BASE}/users?${params.toString()}`);
+        },
+    });
+}
+
+export function useUser(id: string) {
+    return useQuery<User>({
+        queryKey: ['user', id],
+        queryFn: () => authFetch(`${API_BASE}/users/${id}`),
+        enabled: !!id,
+    });
+}
+
+export function useCreateUser() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (data: { email: string; name: string; password: string; role: string; organizationId?: string }) =>
+            authFetch(`${API_BASE}/auth/register`, {
+                method: 'POST',
+                body: JSON.stringify(data),
+            }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['users'] });
+        },
+    });
+}
+
+export function useUpdateUser() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ id, ...data }: { id: string; name?: string; role?: string; status?: string }) =>
+            authFetch(`${API_BASE}/users/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify(data),
+            }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['users'] });
+        },
+    });
+}
+
+export function useDeleteUser() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (id: string) =>
+            authFetch(`${API_BASE}/users/${id}`, { method: 'DELETE' }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['users'] });
+        },
+    });
+}
+
+// ============ Exceptions API ============
+
+export interface Exception {
+    id: string;
+    vulnerabilityId: string;
+    vulnerability?: {
+        cveId: string;
+        severity: string;
+    };
+    projectId: string;
+    project?: { name: string };
+    requestedBy: string;
+    requestedAt: string;
+    reason: string;
+    status: 'PENDING' | 'APPROVED' | 'REJECTED';
+    expiresAt: string;
+    approvedBy?: string;
+    approvedAt?: string;
+    rejectedBy?: string;
+    rejectedAt?: string;
+    rejectReason?: string;
+}
+
+export function useExceptions(status?: string) {
+    return useQuery<Exception[]>({
+        queryKey: ['exceptions', status],
+        queryFn: () => {
+            const params = new URLSearchParams();
+            if (status && status !== 'all') params.set('status', status.toUpperCase());
+            return authFetch(`${API_BASE}/policies/exceptions?${params.toString()}`);
+        },
+    });
+}
+
+export function useApproveException() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (id: string) =>
+            authFetch(`${API_BASE}/policies/exceptions/${id}/approve`, { method: 'POST' }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['exceptions'] });
+        },
+    });
+}
+
+export function useRejectException() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+            authFetch(`${API_BASE}/policies/exceptions/${id}/reject`, {
+                method: 'POST',
+                body: JSON.stringify({ reason }),
+            }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['exceptions'] });
+        },
+    });
+}
+
