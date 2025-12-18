@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { CodeBlock } from '@/components/ui/code-block';
 import { StepNavigator, type Step } from '@/components/ui/step-navigator';
+import { useApiTokens, useScans } from '@/lib/api-hooks';
 
 // Types
 type Environment = 'local' | 'ci' | 'docker';
@@ -62,16 +63,21 @@ const SCAN_TYPES: { id: ScanType; label: string; description: string }[] = [
     { id: 'config', label: 'Config Scan', description: 'K8s/Terraform 설정 분석' },
 ];
 
-// Mock data
-const MOCK_TOKEN = 'jasca_a1b2c3d4e5f6g7h8i9j0';
-const MOCK_LOGS: TransmissionLog[] = [
-    { id: '1', timestamp: '2024-12-17 14:30:22', status: 'success', message: '스캔 결과 전송 완료 (취약점 23개)' },
-    { id: '2', timestamp: '2024-12-16 09:15:44', status: 'error', message: '인증 실패: 토큰이 만료되었습니다' },
-];
+// Constants removed - using real API data
 
 export default function TrivyGuidePage() {
     const searchParams = useSearchParams();
     const projectId = searchParams.get('projectId');
+
+    // Fetch real tokens and scans from API
+    const { data: tokens = [] } = useApiTokens();
+    const { data: scansData } = useScans();
+    const recentScans = scansData?.data?.slice(0, 5) || [];
+
+    // Get first available token or empty string
+    const currentToken = tokens.length > 0 ? tokens[0] : null;
+    const tokenDisplay = currentToken ? currentToken.tokenPrefix + '****' : '토큰 없음';
+    const fullTokenForCopy = currentToken ? `jasca_${currentToken.tokenPrefix}************` : '';
 
     // State
     const [currentStep, setCurrentStep] = useState(0);
@@ -94,10 +100,12 @@ export default function TrivyGuidePage() {
 
     // Copy handlers
     const handleCopyToken = useCallback(async () => {
-        await navigator.clipboard.writeText(MOCK_TOKEN);
-        setTokenCopied(true);
-        setTimeout(() => setTokenCopied(false), 2000);
-    }, []);
+        if (fullTokenForCopy) {
+            await navigator.clipboard.writeText(fullTokenForCopy);
+            setTokenCopied(true);
+            setTimeout(() => setTokenCopied(false), 2000);
+        }
+    }, [fullTokenForCopy]);
 
     const handleCopyEndpoint = useCallback(async () => {
         await navigator.clipboard.writeText(getEndpointUrl());
@@ -396,8 +404,8 @@ done`,
                         <div key={index} className="flex items-center">
                             <div className="flex flex-col items-center">
                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium ${index < 3 ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' :
-                                        index < 6 ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
-                                            'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
+                                    index < 6 ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
+                                        'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300'
                                     }`}>
                                     {index + 1}
                                 </div>
@@ -486,7 +494,7 @@ done`,
                             <div className="flex-1 flex items-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-mono text-sm">
                                 <Key className="h-4 w-4 text-slate-400" />
                                 <span className="text-slate-700 dark:text-slate-300">
-                                    {showToken ? MOCK_TOKEN : 'jasca_****' + MOCK_TOKEN.slice(-4)}
+                                    {currentToken ? (showToken ? fullTokenForCopy : tokenDisplay) : '토큰이 없습니다. API 토큰 페이지에서 생성하세요.'}
                                 </span>
                             </div>
                             <button
@@ -548,7 +556,7 @@ done`,
                             </p>
                             <CodeBlock
                                 code={`# 환경 변수 설정
-export JASCA_TOKEN="${MOCK_TOKEN}"`}
+export JASCA_TOKEN="YOUR_API_TOKEN_HERE"`}
                                 language="bash"
                                 showLineNumbers={false}
                                 className="mt-3"
@@ -579,8 +587,8 @@ export JASCA_TOKEN="${MOCK_TOKEN}"`}
                                 key={env.id}
                                 onClick={() => setEnvironment(env.id)}
                                 className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors ${environment === env.id
-                                        ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                                        : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                    ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                    : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
                                     }`}
                             >
                                 <env.icon className="h-4 w-4" />
@@ -601,8 +609,8 @@ export JASCA_TOKEN="${MOCK_TOKEN}"`}
                                 key={type.id}
                                 onClick={() => setScanType(type.id)}
                                 className={`p-3 rounded-lg border text-left transition-colors ${scanType === type.id
-                                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30'
-                                        : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30'
+                                    : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
                                     }`}
                             >
                                 <p className={`font-medium text-sm ${scanType === type.id ? 'text-blue-700 dark:text-blue-400' : 'text-slate-900 dark:text-white'
@@ -695,8 +703,8 @@ curl -X POST "${getEndpointUrl()}/file" \\
                                 onClick={handleTestTransmission}
                                 disabled={testStatus === 'loading'}
                                 className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium transition-colors ${testStatus === 'loading'
-                                        ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
-                                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                                    ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                                    : 'bg-blue-600 hover:bg-blue-700 text-white'
                                     }`}
                             >
                                 {testStatus === 'loading' ? (
@@ -766,20 +774,30 @@ curl -X POST "${getEndpointUrl()}/file" \\
                             </Link>
                         </div>
                         <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
-                            {MOCK_LOGS.map((log) => (
+                            {recentScans.length > 0 ? recentScans.map((scan) => (
                                 <div
-                                    key={log.id}
+                                    key={scan.id}
                                     className="flex items-center gap-3 px-4 py-3 border-b border-slate-200 dark:border-slate-700 last:border-b-0"
                                 >
-                                    {log.status === 'success' ? (
+                                    {scan.status === 'COMPLETED' ? (
                                         <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" />
-                                    ) : (
+                                    ) : scan.status === 'FAILED' ? (
                                         <XCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
+                                    ) : (
+                                        <RefreshCw className="h-4 w-4 text-blue-500 flex-shrink-0 animate-spin" />
                                     )}
-                                    <span className="text-xs text-slate-500 w-36 flex-shrink-0">{log.timestamp}</span>
-                                    <span className="text-sm text-slate-700 dark:text-slate-300">{log.message}</span>
+                                    <span className="text-xs text-slate-500 w-36 flex-shrink-0">
+                                        {new Date(scan.startedAt).toLocaleString('ko-KR')}
+                                    </span>
+                                    <span className="text-sm text-slate-700 dark:text-slate-300">
+                                        {scan.targetName} ({scan.scanType})
+                                    </span>
                                 </div>
-                            ))}
+                            )) : (
+                                <div className="p-4 text-center text-slate-500 text-sm">
+                                    최근 스캔 기록이 없습니다
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -801,8 +819,8 @@ curl -X POST "${getEndpointUrl()}/file" \\
                             >
                                 <div className="flex items-center gap-3">
                                     <scenario.icon className={`h-5 w-5 ${scenario.color === 'red' ? 'text-red-500' :
-                                            scenario.color === 'yellow' ? 'text-yellow-500' :
-                                                'text-blue-500'
+                                        scenario.color === 'yellow' ? 'text-yellow-500' :
+                                            'text-blue-500'
                                         }`} />
                                     <span className="font-medium text-slate-900 dark:text-white">{scenario.title}</span>
                                 </div>

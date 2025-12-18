@@ -577,3 +577,167 @@ export function useDeleteApiToken() {
     });
 }
 
+// ============ Stats API ============
+
+export interface StatsOverview {
+    total: number;
+    bySeverity: {
+        critical: number;
+        high: number;
+        medium: number;
+        low: number;
+        unknown: number;
+    };
+    byStatus: {
+        open: number;
+        inProgress: number;
+        fixed: number;
+        ignored: number;
+    };
+    recentCritical: Array<{
+        id: string;
+        cveId: string;
+        title: string;
+        pkgName: string;
+        project: string;
+        createdAt: string;
+    }>;
+}
+
+export interface ProjectStats {
+    projectId: string;
+    projectName: string;
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+    total: number;
+}
+
+export interface TrendData {
+    date: string;
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+}
+
+export function useStatsOverview(organizationId?: string) {
+    return useQuery<StatsOverview>({
+        queryKey: ['stats-overview', organizationId],
+        queryFn: () => {
+            const params = new URLSearchParams();
+            if (organizationId) params.set('organizationId', organizationId);
+            return authFetch(`${API_BASE}/stats/overview?${params.toString()}`);
+        },
+    });
+}
+
+export function useStatsByProject(organizationId?: string) {
+    return useQuery<ProjectStats[]>({
+        queryKey: ['stats-by-project', organizationId],
+        queryFn: () => {
+            const params = new URLSearchParams();
+            if (organizationId) params.set('organizationId', organizationId);
+            return authFetch(`${API_BASE}/stats/by-project?${params.toString()}`);
+        },
+    });
+}
+
+export function useStatsTrend(organizationId?: string, days = 7) {
+    return useQuery<TrendData[]>({
+        queryKey: ['stats-trend', organizationId, days],
+        queryFn: () => {
+            const params = new URLSearchParams();
+            if (organizationId) params.set('organizationId', organizationId);
+            params.set('days', days.toString());
+            return authFetch(`${API_BASE}/stats/trend?${params.toString()}`);
+        },
+    });
+}
+
+// ============ Notifications API ============
+
+export interface Notification {
+    id: string;
+    type: 'critical_vuln' | 'policy_violation' | 'exception' | 'scan_complete' | 'system';
+    title: string;
+    message: string;
+    isRead: boolean;
+    createdAt: string;
+    link?: string;
+}
+
+export function useNotifications() {
+    return useQuery<Notification[]>({
+        queryKey: ['notifications'],
+        queryFn: () => authFetch(`${API_BASE}/notifications`),
+    });
+}
+
+export function useMarkNotificationRead() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (id: string) =>
+            authFetch(`${API_BASE}/notifications/${id}/read`, { method: 'POST' }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['notifications'] });
+        },
+    });
+}
+
+export function useMarkAllNotificationsRead() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: () =>
+            authFetch(`${API_BASE}/notifications/read-all`, { method: 'POST' }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['notifications'] });
+        },
+    });
+}
+
+// ============ Reports API ============
+
+export interface Report {
+    id: string;
+    name: string;
+    type: 'vulnerability_summary' | 'trend_analysis' | 'compliance_audit' | 'project_status';
+    status: 'pending' | 'generating' | 'completed' | 'failed';
+    format: 'pdf' | 'csv' | 'json';
+    createdAt: string;
+    completedAt?: string;
+    downloadUrl?: string;
+}
+
+export function useReports() {
+    return useQuery<Report[]>({
+        queryKey: ['reports'],
+        queryFn: () => authFetch(`${API_BASE}/reports`),
+    });
+}
+
+export function useCreateReport() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (data: { name: string; type: string; format: string; parameters?: Record<string, unknown> }) =>
+            authFetch(`${API_BASE}/reports`, {
+                method: 'POST',
+                body: JSON.stringify(data),
+            }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['reports'] });
+        },
+    });
+}
+
+export function useDeleteReport() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (id: string) =>
+            authFetch(`${API_BASE}/reports/${id}`, { method: 'DELETE' }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['reports'] });
+        },
+    });
+}

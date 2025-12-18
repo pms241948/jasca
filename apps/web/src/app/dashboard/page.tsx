@@ -16,46 +16,59 @@ import {
     Line,
     Legend,
 } from 'recharts';
-import { AlertTriangle, Shield, CheckCircle, Clock, ArrowUp, ArrowDown, ExternalLink } from 'lucide-react';
+import { AlertTriangle, Shield, CheckCircle, Clock, ExternalLink, Loader2 } from 'lucide-react';
 import { StatCard, Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { StatCardSkeleton, ChartSkeleton } from '@/components/ui/skeleton';
 import { SeverityBadge } from '@/components/ui/badge';
+import { useStatsOverview, useStatsByProject, useStatsTrend } from '@/lib/api-hooks';
 
-// Mock data - would come from API in production
-const severityData = [
-    { name: 'Critical', value: 12, color: '#dc2626' },
-    { name: 'High', value: 45, color: '#ea580c' },
-    { name: 'Medium', value: 89, color: '#ca8a04' },
-    { name: 'Low', value: 156, color: '#2563eb' },
-];
+const SEVERITY_COLORS = {
+    Critical: '#dc2626',
+    High: '#ea580c',
+    Medium: '#ca8a04',
+    Low: '#2563eb',
+};
 
-const trendData = [
-    { date: '12/11', critical: 15, high: 48, medium: 92 },
-    { date: '12/12', critical: 14, high: 46, medium: 90 },
-    { date: '12/13', critical: 13, high: 45, medium: 88 },
-    { date: '12/14', critical: 12, high: 44, medium: 87 },
-    { date: '12/15', critical: 12, high: 45, medium: 89 },
-    { date: '12/16', critical: 11, high: 43, medium: 86 },
-    { date: '12/17', critical: 12, high: 45, medium: 89 },
-];
-
-const projectData = [
-    { name: 'backend-api', critical: 3, high: 12, medium: 28 },
-    { name: 'frontend-web', critical: 2, high: 8, medium: 15 },
-    { name: 'auth-service', critical: 4, high: 10, medium: 22 },
-    { name: 'data-service', critical: 3, high: 15, medium: 24 },
-];
-
-// Recent critical vulnerabilities
-const recentCritical = [
-    { id: '1', cveId: 'CVE-2024-1234', title: 'Remote Code Execution in Library X', project: 'backend-api', daysAgo: 2 },
-    { id: '2', cveId: 'CVE-2024-5678', title: 'SQL Injection Vulnerability', project: 'auth-service', daysAgo: 3 },
-    { id: '3', cveId: 'CVE-2024-9012', title: 'Authentication Bypass', project: 'data-service', daysAgo: 5 },
-];
+function formatDaysAgo(dateString: string) {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+    return `${diffDays}일 전`;
+}
 
 export default function DashboardPage() {
     const router = useRouter();
-    const isLoading = false; // Would come from API query
+
+    // Fetch real data from API
+    const { data: overview, isLoading: overviewLoading, error: overviewError } = useStatsOverview();
+    const { data: projectStats, isLoading: projectLoading } = useStatsByProject();
+    const { data: trendData, isLoading: trendLoading } = useStatsTrend(undefined, 7);
+
+    const isLoading = overviewLoading || projectLoading || trendLoading;
+
+    // Prepare severity data for pie chart
+    const severityData = overview ? [
+        { name: 'Critical', value: overview.bySeverity.critical, color: SEVERITY_COLORS.Critical },
+        { name: 'High', value: overview.bySeverity.high, color: SEVERITY_COLORS.High },
+        { name: 'Medium', value: overview.bySeverity.medium, color: SEVERITY_COLORS.Medium },
+        { name: 'Low', value: overview.bySeverity.low, color: SEVERITY_COLORS.Low },
+    ] : [];
+
+    // Prepare project data for bar chart
+    const projectData = projectStats?.map(p => ({
+        name: p.projectName,
+        critical: p.critical,
+        high: p.high,
+        medium: p.medium,
+    })) || [];
+
+    // Prepare trend data for line chart
+    const formattedTrendData = trendData?.map(t => ({
+        date: new Date(t.date).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' }),
+        critical: t.critical,
+        high: t.high,
+        medium: t.medium,
+    })) || [];
 
     // Drill-down navigation handlers
     const handleSeverityClick = (severity: string) => {
@@ -66,8 +79,11 @@ export default function DashboardPage() {
         router.push(`/dashboard/vulnerabilities?status=${status}`);
     };
 
-    const handleProjectClick = (projectSlug: string) => {
-        router.push(`/dashboard/projects/${projectSlug}`);
+    const handleProjectClick = (projectName: string) => {
+        const project = projectStats?.find(p => p.projectName === projectName);
+        if (project) {
+            router.push(`/dashboard/projects/${project.projectId}`);
+        }
     };
 
     if (isLoading) {
@@ -86,41 +102,49 @@ export default function DashboardPage() {
         );
     }
 
+    if (overviewError) {
+        return (
+            <div className="flex flex-col items-center justify-center h-64 text-slate-500">
+                <AlertTriangle className="h-12 w-12 mb-4 text-yellow-500" />
+                <p>데이터를 불러오는데 실패했습니다.</p>
+                <button
+                    onClick={() => window.location.reload()}
+                    className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                    다시 시도
+                </button>
+            </div>
+        );
+    }
+
     return (
         <div className="space-y-6">
             {/* Stats Cards - Critical/High first for priority */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatCard
                     title="Critical"
-                    value={12}
-                    change={-2}
-                    changeLabel="지난 주 대비"
+                    value={overview?.bySeverity.critical || 0}
                     icon={<Shield className="h-6 w-6" />}
                     color="red"
                     onClick={() => handleSeverityClick('critical')}
                 />
                 <StatCard
                     title="High"
-                    value={45}
-                    change={3}
-                    changeLabel="지난 주 대비"
+                    value={overview?.bySeverity.high || 0}
                     icon={<AlertTriangle className="h-6 w-6" />}
                     color="orange"
                     onClick={() => handleSeverityClick('high')}
                 />
                 <StatCard
                     title="해결됨"
-                    value={156}
-                    change={-23}
-                    changeLabel="이번 주 해결"
+                    value={overview?.byStatus.fixed || 0}
                     icon={<CheckCircle className="h-6 w-6" />}
                     color="green"
                     onClick={() => handleStatusClick('FIXED')}
                 />
                 <StatCard
                     title="진행 중"
-                    value={34}
-                    change={0}
+                    value={overview?.byStatus.inProgress || 0}
                     icon={<Clock className="h-6 w-6" />}
                     color="blue"
                     onClick={() => handleStatusClick('IN_PROGRESS')}
@@ -136,26 +160,32 @@ export default function DashboardPage() {
                     </CardHeader>
                     <CardContent>
                         <div className="h-64">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <PieChart>
-                                    <Pie
-                                        data={severityData}
-                                        cx="50%"
-                                        cy="50%"
-                                        innerRadius={60}
-                                        outerRadius={100}
-                                        paddingAngle={2}
-                                        dataKey="value"
-                                        onClick={(entry) => handleSeverityClick(entry.name)}
-                                        cursor="pointer"
-                                    >
-                                        {severityData.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={entry.color} />
-                                        ))}
-                                    </Pie>
-                                    <Tooltip />
-                                </PieChart>
-                            </ResponsiveContainer>
+                            {severityData.length > 0 ? (
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={severityData}
+                                            cx="50%"
+                                            cy="50%"
+                                            innerRadius={60}
+                                            outerRadius={100}
+                                            paddingAngle={2}
+                                            dataKey="value"
+                                            onClick={(entry) => handleSeverityClick(entry.name)}
+                                            cursor="pointer"
+                                        >
+                                            {severityData.map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={entry.color} />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            ) : (
+                                <div className="flex items-center justify-center h-full text-slate-500">
+                                    데이터가 없습니다
+                                </div>
+                            )}
                         </div>
                         <div className="flex justify-center gap-6 mt-4">
                             {severityData.map((item) => (
@@ -184,39 +214,45 @@ export default function DashboardPage() {
                     </CardHeader>
                     <CardContent>
                         <div className="h-64">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <LineChart data={trendData}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                                    <XAxis dataKey="date" stroke="#64748b" />
-                                    <YAxis stroke="#64748b" />
-                                    <Tooltip />
-                                    <Legend />
-                                    <Line
-                                        type="monotone"
-                                        dataKey="critical"
-                                        name="Critical"
-                                        stroke="#dc2626"
-                                        strokeWidth={2}
-                                        dot={{ fill: '#dc2626' }}
-                                    />
-                                    <Line
-                                        type="monotone"
-                                        dataKey="high"
-                                        name="High"
-                                        stroke="#ea580c"
-                                        strokeWidth={2}
-                                        dot={{ fill: '#ea580c' }}
-                                    />
-                                    <Line
-                                        type="monotone"
-                                        dataKey="medium"
-                                        name="Medium"
-                                        stroke="#ca8a04"
-                                        strokeWidth={2}
-                                        dot={{ fill: '#ca8a04' }}
-                                    />
-                                </LineChart>
-                            </ResponsiveContainer>
+                            {formattedTrendData.length > 0 ? (
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={formattedTrendData}>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                        <XAxis dataKey="date" stroke="#64748b" />
+                                        <YAxis stroke="#64748b" />
+                                        <Tooltip />
+                                        <Legend />
+                                        <Line
+                                            type="monotone"
+                                            dataKey="critical"
+                                            name="Critical"
+                                            stroke="#dc2626"
+                                            strokeWidth={2}
+                                            dot={{ fill: '#dc2626' }}
+                                        />
+                                        <Line
+                                            type="monotone"
+                                            dataKey="high"
+                                            name="High"
+                                            stroke="#ea580c"
+                                            strokeWidth={2}
+                                            dot={{ fill: '#ea580c' }}
+                                        />
+                                        <Line
+                                            type="monotone"
+                                            dataKey="medium"
+                                            name="Medium"
+                                            stroke="#ca8a04"
+                                            strokeWidth={2}
+                                            dot={{ fill: '#ca8a04' }}
+                                        />
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            ) : (
+                                <div className="flex items-center justify-center h-full text-slate-500">
+                                    데이터가 없습니다
+                                </div>
+                            )}
                         </div>
                     </CardContent>
                 </Card>
@@ -232,25 +268,31 @@ export default function DashboardPage() {
                         </CardHeader>
                         <CardContent>
                             <div className="h-64">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart
-                                        data={projectData}
-                                        onClick={(data) => {
-                                            if (data?.activePayload?.[0]?.payload?.name) {
-                                                handleProjectClick(data.activePayload[0].payload.name);
-                                            }
-                                        }}
-                                    >
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                                        <XAxis dataKey="name" stroke="#64748b" />
-                                        <YAxis stroke="#64748b" />
-                                        <Tooltip />
-                                        <Legend />
-                                        <Bar dataKey="critical" name="Critical" stackId="a" fill="#dc2626" cursor="pointer" />
-                                        <Bar dataKey="high" name="High" stackId="a" fill="#ea580c" cursor="pointer" />
-                                        <Bar dataKey="medium" name="Medium" stackId="a" fill="#ca8a04" cursor="pointer" />
-                                    </BarChart>
-                                </ResponsiveContainer>
+                                {projectData.length > 0 ? (
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart
+                                            data={projectData}
+                                            onClick={(data) => {
+                                                if (data?.activePayload?.[0]?.payload?.name) {
+                                                    handleProjectClick(data.activePayload[0].payload.name);
+                                                }
+                                            }}
+                                        >
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                            <XAxis dataKey="name" stroke="#64748b" />
+                                            <YAxis stroke="#64748b" />
+                                            <Tooltip />
+                                            <Legend />
+                                            <Bar dataKey="critical" name="Critical" stackId="a" fill="#dc2626" cursor="pointer" />
+                                            <Bar dataKey="high" name="High" stackId="a" fill="#ea580c" cursor="pointer" />
+                                            <Bar dataKey="medium" name="Medium" stackId="a" fill="#ca8a04" cursor="pointer" />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                ) : (
+                                    <div className="flex items-center justify-center h-full text-slate-500">
+                                        프로젝트 데이터가 없습니다
+                                    </div>
+                                )}
                             </div>
                         </CardContent>
                     </Card>
@@ -266,30 +308,36 @@ export default function DashboardPage() {
                     </CardHeader>
                     <CardContent className="p-0">
                         <div className="divide-y divide-slate-100 dark:divide-slate-700">
-                            {recentCritical.map((vuln) => (
-                                <button
-                                    key={vuln.id}
-                                    onClick={() => router.push(`/dashboard/vulnerabilities/${vuln.id}`)}
-                                    className="w-full p-4 text-left hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                                >
-                                    <div className="flex items-start justify-between gap-2">
-                                        <div className="min-w-0 flex-1">
-                                            <p className="text-sm font-medium text-slate-900 dark:text-white truncate">
-                                                {vuln.cveId}
-                                            </p>
-                                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                                                {vuln.title}
-                                            </p>
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <span className="text-xs text-slate-400">{vuln.project}</span>
-                                                <span className="text-xs text-slate-400">•</span>
-                                                <span className="text-xs text-slate-400">{vuln.daysAgo}일 전</span>
+                            {overview?.recentCritical && overview.recentCritical.length > 0 ? (
+                                overview.recentCritical.slice(0, 5).map((vuln) => (
+                                    <button
+                                        key={vuln.id}
+                                        onClick={() => router.push(`/dashboard/vulnerabilities/${vuln.id}`)}
+                                        className="w-full p-4 text-left hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                                    >
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="min-w-0 flex-1">
+                                                <p className="text-sm font-medium text-slate-900 dark:text-white truncate">
+                                                    {vuln.cveId}
+                                                </p>
+                                                <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                                    {vuln.title || vuln.pkgName}
+                                                </p>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <span className="text-xs text-slate-400">{vuln.project}</span>
+                                                    <span className="text-xs text-slate-400">•</span>
+                                                    <span className="text-xs text-slate-400">{formatDaysAgo(vuln.createdAt)}</span>
+                                                </div>
                                             </div>
+                                            <SeverityBadge severity="critical" size="sm" />
                                         </div>
-                                        <SeverityBadge severity="critical" size="sm" />
-                                    </div>
-                                </button>
-                            ))}
+                                    </button>
+                                ))
+                            ) : (
+                                <div className="p-8 text-center text-slate-500 text-sm">
+                                    최근 Critical 취약점이 없습니다
+                                </div>
+                            )}
                         </div>
                         <div className="p-4 border-t border-slate-100 dark:border-slate-700">
                             <button
@@ -306,4 +354,3 @@ export default function DashboardPage() {
         </div>
     );
 }
-
