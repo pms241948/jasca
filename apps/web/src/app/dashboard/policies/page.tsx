@@ -15,10 +15,11 @@ import {
     ChevronDown,
     ChevronRight,
 } from 'lucide-react';
-import { usePolicies, useCreatePolicy, useUpdatePolicy, useDeletePolicy, Policy } from '@/lib/api-hooks';
+import { usePolicies, useCreatePolicy, useUpdatePolicy, useDeletePolicy, useOrganizations, Policy } from '@/lib/api-hooks';
 
 export default function PoliciesPage() {
     const { data: policies, isLoading, error, refetch } = usePolicies();
+    const { data: organizations } = useOrganizations();
     const createPolicy = useCreatePolicy();
     const updatePolicy = useUpdatePolicy();
     const deletePolicy = useDeletePolicy();
@@ -29,15 +30,22 @@ export default function PoliciesPage() {
     const [formData, setFormData] = useState({
         name: '',
         description: '',
-        scope: 'ORGANIZATION' as 'ORGANIZATION' | 'PROJECT',
-        enabled: true,
+        organizationId: '',
+        projectId: '',
+        isActive: true,
     });
 
     const handleCreate = async () => {
         try {
-            await createPolicy.mutateAsync(formData);
+            await createPolicy.mutateAsync({
+                name: formData.name,
+                description: formData.description || undefined,
+                organizationId: formData.organizationId || undefined,
+                projectId: formData.projectId || undefined,
+                isActive: formData.isActive,
+            });
             setShowCreateForm(false);
-            setFormData({ name: '', description: '', scope: 'ORGANIZATION', enabled: true });
+            setFormData({ name: '', description: '', organizationId: '', projectId: '', isActive: true });
         } catch (error) {
             console.error('Failed to create policy:', error);
         }
@@ -46,9 +54,14 @@ export default function PoliciesPage() {
     const handleUpdate = async () => {
         if (!editingPolicy) return;
         try {
-            await updatePolicy.mutateAsync({ id: editingPolicy.id, ...formData });
+            await updatePolicy.mutateAsync({
+                id: editingPolicy.id,
+                name: formData.name,
+                description: formData.description || undefined,
+                isActive: formData.isActive,
+            });
             setEditingPolicy(null);
-            setFormData({ name: '', description: '', scope: 'ORGANIZATION', enabled: true });
+            setFormData({ name: '', description: '', organizationId: '', projectId: '', isActive: true });
         } catch (error) {
             console.error('Failed to update policy:', error);
         }
@@ -65,7 +78,7 @@ export default function PoliciesPage() {
 
     const toggleEnabled = async (policy: Policy) => {
         try {
-            await updatePolicy.mutateAsync({ id: policy.id, enabled: !policy.enabled });
+            await updatePolicy.mutateAsync({ id: policy.id, isActive: !policy.isActive });
         } catch (error) {
             console.error('Failed to toggle policy:', error);
         }
@@ -81,6 +94,18 @@ export default function PoliciesPage() {
             }
             return next;
         });
+    };
+
+    const startEdit = (policy: Policy) => {
+        setEditingPolicy(policy);
+        setFormData({
+            name: policy.name,
+            description: policy.description || '',
+            organizationId: policy.organizationId || '',
+            projectId: policy.projectId || '',
+            isActive: policy.isActive,
+        });
+        setShowCreateForm(false);
     };
 
     if (isLoading) {
@@ -129,7 +154,7 @@ export default function PoliciesPage() {
                         onClick={() => {
                             setShowCreateForm(true);
                             setEditingPolicy(null);
-                            setFormData({ name: '', description: '', scope: 'ORGANIZATION', enabled: true });
+                            setFormData({ name: '', description: '', organizationId: '', projectId: '', isActive: true });
                         }}
                         className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                     >
@@ -148,7 +173,7 @@ export default function PoliciesPage() {
                     <div className="space-y-4">
                         <div>
                             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                정책 이름
+                                정책 이름 *
                             </label>
                             <input
                                 type="text"
@@ -170,32 +195,36 @@ export default function PoliciesPage() {
                                 placeholder="정책에 대한 설명을 입력하세요."
                             />
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                적용 범위
-                            </label>
-                            <select
-                                value={formData.scope}
-                                onChange={(e) => setFormData(prev => ({ ...prev, scope: e.target.value as 'ORGANIZATION' | 'PROJECT' }))}
-                                className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            >
-                                <option value="ORGANIZATION">조직 전체</option>
-                                <option value="PROJECT">프로젝트별</option>
-                            </select>
-                        </div>
+                        {!editingPolicy && organizations && organizations.length > 0 && (
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                    조직 (선택사항)
+                                </label>
+                                <select
+                                    value={formData.organizationId}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, organizationId: e.target.value }))}
+                                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                    <option value="">전체 (조직 지정 안함)</option>
+                                    {organizations.map((org) => (
+                                        <option key={org.id} value={org.id}>{org.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
                         <div className="flex items-center gap-2">
                             <button
-                                onClick={() => setFormData(prev => ({ ...prev, enabled: !prev.enabled }))}
+                                onClick={() => setFormData(prev => ({ ...prev, isActive: !prev.isActive }))}
                                 className="text-slate-600 dark:text-slate-400"
                             >
-                                {formData.enabled ? (
+                                {formData.isActive ? (
                                     <ToggleRight className="h-6 w-6 text-blue-600" />
                                 ) : (
                                     <ToggleLeft className="h-6 w-6" />
                                 )}
                             </button>
                             <span className="text-sm text-slate-700 dark:text-slate-300">
-                                {formData.enabled ? '활성화' : '비활성화'}
+                                {formData.isActive ? '활성화' : '비활성화'}
                             </span>
                         </div>
                         <div className="flex justify-end gap-2 pt-4 border-t border-slate-200 dark:border-slate-700">
@@ -210,9 +239,12 @@ export default function PoliciesPage() {
                             </button>
                             <button
                                 onClick={editingPolicy ? handleUpdate : handleCreate}
-                                disabled={!formData.name.trim()}
-                                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled={!formData.name.trim() || createPolicy.isPending || updatePolicy.isPending}
+                                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                             >
+                                {(createPolicy.isPending || updatePolicy.isPending) && (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                )}
                                 {editingPolicy ? '수정' : '추가'}
                             </button>
                         </div>
@@ -258,9 +290,9 @@ export default function PoliciesPage() {
                                         )}
                                     </button>
                                     <div className="flex items-center gap-3">
-                                        <Shield className={`h-5 w-5 ${policy.enabled ? 'text-blue-600' : 'text-slate-400'}`} />
+                                        <Shield className={`h-5 w-5 ${policy.isActive ? 'text-blue-600' : 'text-slate-400'}`} />
                                         <div>
-                                            <h3 className={`font-medium ${policy.enabled ? 'text-slate-900 dark:text-white' : 'text-slate-500'}`}>
+                                            <h3 className={`font-medium ${policy.isActive ? 'text-slate-900 dark:text-white' : 'text-slate-500'}`}>
                                                 {policy.name}
                                             </h3>
                                             {policy.description && (
@@ -272,40 +304,37 @@ export default function PoliciesPage() {
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <span className={`px-2 py-1 text-xs rounded-full ${policy.scope === 'ORGANIZATION'
-                                            ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                                            : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                        }`}>
-                                        {policy.scope === 'ORGANIZATION' ? '조직' : '프로젝트'}
-                                    </span>
+                                    {policy.organization && (
+                                        <span className="px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                                            {policy.organization.name}
+                                        </span>
+                                    )}
+                                    {policy.project && (
+                                        <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                            {policy.project.name}
+                                        </span>
+                                    )}
                                     <button
                                         onClick={() => toggleEnabled(policy)}
-                                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                                        disabled={updatePolicy.isPending}
+                                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-50"
                                     >
-                                        {policy.enabled ? (
+                                        {policy.isActive ? (
                                             <ToggleRight className="h-5 w-5 text-blue-600" />
                                         ) : (
                                             <ToggleLeft className="h-5 w-5" />
                                         )}
                                     </button>
                                     <button
-                                        onClick={() => {
-                                            setEditingPolicy(policy);
-                                            setFormData({
-                                                name: policy.name,
-                                                description: policy.description || '',
-                                                scope: policy.scope,
-                                                enabled: policy.enabled,
-                                            });
-                                            setShowCreateForm(false);
-                                        }}
+                                        onClick={() => startEdit(policy)}
                                         className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors"
                                     >
                                         <Edit className="h-4 w-4" />
                                     </button>
                                     <button
                                         onClick={() => handleDelete(policy.id)}
-                                        className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"
+                                        disabled={deletePolicy.isPending}
+                                        className="p-1.5 text-slate-400 hover:text-red-600 transition-colors disabled:opacity-50"
                                     >
                                         <Trash2 className="h-4 w-4" />
                                     </button>
