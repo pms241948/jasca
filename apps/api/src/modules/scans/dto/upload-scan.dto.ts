@@ -18,6 +18,22 @@ export class UploadScanDto {
     @IsEnum(SourceType)
     sourceType: SourceType;
 
+    @ApiPropertyOptional({
+        description: 'Project name - if projectId is not provided, will find or create a project with this name',
+        example: 'my-app',
+    })
+    @IsString()
+    @IsOptional()
+    projectName?: string;
+
+    @ApiPropertyOptional({
+        description: 'Organization ID - required when auto-creating a new project',
+        example: 'org-uuid-here',
+    })
+    @IsString()
+    @IsOptional()
+    organizationId?: string;
+
     @ApiPropertyOptional({ example: 'registry.example.com/app:v1.0.0' })
     @IsString()
     @IsOptional()

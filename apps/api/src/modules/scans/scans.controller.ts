@@ -34,7 +34,7 @@ export class ScansController {
     @UseGuards(JwtAuthGuard)
     @ApiBearerAuth()
     @ApiOperation({ summary: 'Get all scan results' })
-    @ApiQuery({ name: 'projectId', required: false })
+    @ApiQuery({ name: 'projectId', required: false, description: 'Project ID - if not provided, projectName and organizationId in body will be used to find/create project' })
     @ApiQuery({ name: 'limit', required: false, type: Number })
     @ApiQuery({ name: 'offset', required: false, type: Number })
     async findAll(
@@ -61,11 +61,12 @@ export class ScansController {
     @Roles('DEVELOPER', 'PROJECT_ADMIN', 'ORG_ADMIN')
     @ApiBearerAuth()
     @ApiSecurity('api-key')
-    @ApiOperation({ summary: 'Upload a Trivy scan result' })
+    @ApiOperation({ summary: 'Upload a Trivy scan result (projectId optional - can auto-create project)' })
+    @ApiQuery({ name: 'projectId', required: false, description: 'Project ID - if not provided, use projectName & organizationId in body' })
     @ApiConsumes('multipart/form-data')
     @UseInterceptors(FileInterceptor('file'))
     async uploadFile(
-        @Query('projectId') projectId: string,
+        @Query('projectId') projectId: string | undefined,
         @Body() dto: UploadScanDto,
         @UploadedFile() file: Express.Multer.File,
     ) {
@@ -78,9 +79,10 @@ export class ScansController {
     @Roles('DEVELOPER', 'PROJECT_ADMIN', 'ORG_ADMIN')
     @ApiBearerAuth()
     @ApiSecurity('api-key')
-    @ApiOperation({ summary: 'Upload a Trivy scan result as JSON body' })
+    @ApiOperation({ summary: 'Upload a Trivy scan result as JSON body (projectId optional)' })
+    @ApiQuery({ name: 'projectId', required: false, description: 'Project ID - if not provided, use projectName & organizationId in body' })
     async uploadJson(
-        @Query('projectId') projectId: string,
+        @Query('projectId') projectId: string | undefined,
         @Body() body: { metadata: UploadScanDto; result: any },
     ) {
         return this.scansService.uploadScan(projectId, body.metadata, body.result);

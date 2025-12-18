@@ -67,6 +67,8 @@ export function useScan(id: string) {
 // Upload scan DTO interface
 export interface UploadScanDto {
     sourceType: 'TRIVY_JSON' | 'TRIVY_SARIF' | 'CI_BAMBOO' | 'CI_GITLAB' | 'CI_JENKINS' | 'CI_GITHUB_ACTIONS' | 'MANUAL';
+    projectName?: string;
+    organizationId?: string;
     imageRef?: string;
     imageDigest?: string;
     tag?: string;
@@ -84,7 +86,7 @@ export function useUploadScan() {
             file,
             metadata,
         }: {
-            projectId: string;
+            projectId?: string; // Now optional - can use projectName + organizationId in metadata instead
             file: File;
             metadata: UploadScanDto;
         }) => {
@@ -98,7 +100,12 @@ export function useUploadScan() {
                 }
             });
 
-            const response = await fetch(`${API_BASE}/scans/upload?projectId=${projectId}`, {
+            // Build URL - projectId is now optional
+            const url = projectId
+                ? `${API_BASE}/scans/upload?projectId=${projectId}`
+                : `${API_BASE}/scans/upload`;
+
+            const response = await fetch(url, {
                 method: 'POST',
                 headers: {
                     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -115,6 +122,7 @@ export function useUploadScan() {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['scans'] });
+            queryClient.invalidateQueries({ queryKey: ['projects'] });
         },
     });
 }

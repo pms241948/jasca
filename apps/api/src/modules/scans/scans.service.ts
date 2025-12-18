@@ -57,14 +57,17 @@ export class ScansService {
         return scan;
     }
 
-    async uploadScan(projectId: string, dto: UploadScanDto, rawResult: any) {
-        // Parse the scan result
+    async uploadScan(projectId: string | undefined, dto: UploadScanDto, rawResult: any) {
+        // Parse the scan result first to get artifact info
         const parsed = this.trivyParser.parse(rawResult, dto.sourceType);
+
+        // Resolve project - either use provided projectId or auto-create
+        const resolvedProjectId = await this.resolveProject(projectId, dto, parsed.artifactName);
 
         // Create the scan result
         const scanResult = await this.prisma.scanResult.create({
             data: {
-                projectId,
+                projectId: resolvedProjectId,
                 imageRef: dto.imageRef || parsed.artifactName || 'unknown',
                 imageDigest: dto.imageDigest,
                 tag: dto.tag,
@@ -89,6 +92,113 @@ export class ScansService {
 
         return this.findById(scanResult.id);
     }
+
+    /**
+     * Resolve project ID - either use provided ID, find by name, or auto-create
+     */
+    private async resolveProject(
+        projectId: string | undefined,
+        dto: UploadScanDto,
+        artifactName?: string,
+    ): Promise<string> {
+        // Case 1: projectId is provided - use it directly
+        if (projectId) {
+            const project = await this.prisma.project.findUnique({
+                where: { id: projectId },
+            });
+            if (!project) {
+                throw new BadRequestException(`Project with ID ${projectId} not found`);
+            }
+            return projectId;
+        }
+
+        // Case 2: projectName is provided - find or create
+        if (dto.projectName) {
+            // Try to find existing project by name
+            const existingProject = await this.prisma.project.findFirst({
+                where: {
+                    name: dto.projectName,
+                    ...(dto.organizationId ? { organizationId: dto.organizationId } : {}),
+                },
+            });
+
+            if (existingProject) {
+                return existingProject.id;
+            }
+
+            // Create new project - organizationId is required for creation
+            if (!dto.organizationId) {
+                throw new BadRequestException(
+                    'organizationId is required when creating a new project via projectName',
+                );
+            }
+
+            const slug = dto.projectName
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-|-$/g, '');
+
+            const newProject = await this.prisma.project.create({
+                data: {
+                    name: dto.projectName,
+                    slug: slug || `project-${Date.now()}`,
+                    organizationId: dto.organizationId,
+                },
+            });
+
+            return newProject.id;
+        }
+
+        // Case 3: Use artifactName from scan result to create project
+        if (artifactName && dto.organizationId) {
+            // Extract a project name from artifact (e.g., 'registry.com/my-app:v1' -> 'my-app')
+            const projectName = this.extractProjectNameFromArtifact(artifactName);
+
+            // Try to find existing project
+            const existingProject = await this.prisma.project.findFirst({
+                where: {
+                    name: projectName,
+                    organizationId: dto.organizationId,
+                },
+            });
+
+            if (existingProject) {
+                return existingProject.id;
+            }
+
+            // Create new project
+            const slug = projectName
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-|-$/g, '');
+
+            const newProject = await this.prisma.project.create({
+                data: {
+                    name: projectName,
+                    slug: slug || `project-${Date.now()}`,
+                    organizationId: dto.organizationId,
+                },
+            });
+
+            return newProject.id;
+        }
+
+        throw new BadRequestException(
+            'Either projectId, projectName with organizationId, or organizationId (for auto-create from artifact) is required',
+        );
+    }
+
+    /**
+     * Extract a project name from artifact reference (e.g., 'registry.com/org/my-app:v1' -> 'my-app')
+     */
+    private extractProjectNameFromArtifact(artifactName: string): string {
+        // Remove tag/digest
+        const withoutTag = artifactName.split(':')[0].split('@')[0];
+        // Get the last part after /
+        const parts = withoutTag.split('/');
+        return parts[parts.length - 1] || 'unknown-project';
+    }
+
 
     private async processVulnerabilities(
         scanResultId: string,

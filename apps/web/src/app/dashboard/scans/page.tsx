@@ -12,8 +12,10 @@ import {
     ChevronRight,
     Loader2,
     RefreshCw,
+    Upload,
 } from 'lucide-react';
 import { useScans, Scan } from '@/lib/api-hooks';
+import { UploadScanModal } from '@/components/upload-scan-modal';
 
 function getStatusIcon(status: string) {
     switch (status) {
@@ -55,6 +57,7 @@ function formatDate(dateString: string) {
 export default function ScansPage() {
     const { data, isLoading, error, refetch } = useScans();
     const [selectedProject, setSelectedProject] = useState<string>('');
+    const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
     if (isLoading) {
         return (
@@ -92,13 +95,22 @@ export default function ScansPage() {
                         총 {data?.total || 0}개의 스캔 결과
                     </p>
                 </div>
-                <button
-                    onClick={() => refetch()}
-                    className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                    <RefreshCw className="h-4 w-4" />
-                    새로고침
-                </button>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => setIsUploadModalOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                        <Upload className="h-4 w-4" />
+                        스캔 업로드
+                    </button>
+                    <button
+                        onClick={() => refetch()}
+                        className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                        <RefreshCw className="h-4 w-4" />
+                        새로고침
+                    </button>
+                </div>
             </div>
 
             {/* Scans List */}
@@ -197,6 +209,12 @@ export default function ScansPage() {
                     </table>
                 </div>
             )}
+
+            {/* Upload Modal */}
+            <UploadScanModal
+                isOpen={isUploadModalOpen}
+                onClose={() => setIsUploadModalOpen(false)}
+            />
         </div>
     );
 }
