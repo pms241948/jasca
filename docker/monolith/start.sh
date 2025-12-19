@@ -17,8 +17,12 @@ else
     exit 1
 fi
 
-# 2. Create volumes if they don't exist
-docker volume create jasca_pg_data
+# 2. Prepare volumes (Clean old data to prevent auth errors from failed installs)
+echo "Cleaning up old data volumes..."
+docker volume rm jasca_postgres_data jasca_redis_data || true
+
+echo "Creating volumes..."
+docker volume create jasca_postgres_data
 docker volume create jasca_redis_data
 
 # 3. Stop and remove existing container if it exists
@@ -35,7 +39,7 @@ docker run -d \
   --restart unless-stopped \
   -p 3000:3000 \
   -p 3001:3001 \
-  -v jasca_pg_data:/var/lib/postgresql/data \
+  -v jasca_postgres_data:/var/lib/postgresql/data \
   -v jasca_redis_data:/var/lib/redis \
   $IMAGE_NAME
 
