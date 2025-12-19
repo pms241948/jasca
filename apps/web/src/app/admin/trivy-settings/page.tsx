@@ -12,6 +12,7 @@ import {
     FileJson,
     Clock,
     Loader2,
+    RefreshCw,
 } from 'lucide-react';
 import { useTrivySettings, useUpdateSettings, type TrivySettings } from '@/lib/api-hooks';
 
@@ -31,7 +32,8 @@ export default function TrivySettingsPage() {
 
     const [config, setConfig] = useState<TrivySettings>(defaultConfig);
     const [saved, setSaved] = useState(false);
-    const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
+    const [hasChanges, setHasChanges] = useState(false);
+    const [testResult, setTestResult] = useState<'success' | 'error' | 'testing' | null>(null);
 
     // Load settings from API
     useEffect(() => {
@@ -47,6 +49,7 @@ export default function TrivySettingsPage() {
                 value: config,
             });
             setSaved(true);
+            setHasChanges(false);
             setTimeout(() => setSaved(false), 3000);
         } catch (err) {
             console.error('Failed to save trivy settings:', err);
@@ -55,14 +58,24 @@ export default function TrivySettingsPage() {
 
     const handleReset = () => {
         setConfig(defaultConfig);
+        setHasChanges(true);
     };
 
     const handleTest = async () => {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        setTestResult('success');
+        setTestResult('testing');
+        try {
+            // Call a simple API endpoint to test connectivity
+            const response = await fetch('/api/health');
+            if (response.ok) {
+                setTestResult('success');
+            } else {
+                setTestResult('error');
+            }
+        } catch (err) {
+            setTestResult('error');
+        }
         setTimeout(() => setTestResult(null), 3000);
     };
-
 
     const toggleSeverity = (severity: string) => {
         setConfig(prev => ({
@@ -71,6 +84,7 @@ export default function TrivySettingsPage() {
                 ? prev.severities.filter(s => s !== severity)
                 : [...prev.severities, severity]
         }));
+        setHasChanges(true);
     };
 
     const toggleScanner = (scanner: string) => {
@@ -80,16 +94,55 @@ export default function TrivySettingsPage() {
                 ? prev.scanners.filter(s => s !== scanner)
                 : [...prev.scanners, scanner]
         }));
+        setHasChanges(true);
     };
+
+    const updateConfig = <K extends keyof TrivySettings>(key: K, value: TrivySettings[K]) => {
+        setConfig(prev => ({ ...prev, [key]: value }));
+        setHasChanges(true);
+    };
+
+    if (isLoading) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6 text-center">
+                <AlertTriangle className="h-12 w-12 mx-auto text-red-500 mb-4" />
+                <h3 className="text-lg font-semibold text-red-800 dark:text-red-200 mb-2">오류 발생</h3>
+                <p className="text-red-600 dark:text-red-300 mb-4">Trivy 설정을 불러오는데 실패했습니다.</p>
+                <button
+                    onClick={() => refetch()}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                >
+                    다시 시도
+                </button>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6 max-w-3xl">
             {/* Header */}
-            <div>
-                <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Trivy 설정</h1>
-                <p className="text-slate-600 dark:text-slate-400 mt-1">
-                    Trivy 스캐너 동작 설정을 관리합니다
-                </p>
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Trivy 설정</h1>
+                    <p className="text-slate-600 dark:text-slate-400 mt-1">
+                        Trivy 스캐너 동작 설정을 관리합니다
+                    </p>
+                </div>
+                <button
+                    onClick={() => refetch()}
+                    disabled={isLoading}
+                    className="p-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+                >
+                    <RefreshCw className={`h-5 w-5 ${isLoading ? 'animate-spin' : ''}`} />
+                </button>
             </div>
 
             {/* Output Settings */}
@@ -107,9 +160,9 @@ export default function TrivySettingsPage() {
                             {(['json', 'table', 'sarif'] as const).map((format) => (
                                 <button
                                     key={format}
-                                    onClick={() => setConfig(prev => ({ ...prev, outputFormat: format }))}
+                                    onClick={() => updateConfig('outputFormat', format)}
                                     className={`px-4 py-2 rounded-lg border transition-colors ${config.outputFormat === format
-                                        ? 'border-red-500 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
+                                        ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400'
                                         : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
                                         }`}
                                 >
@@ -125,8 +178,8 @@ export default function TrivySettingsPage() {
                         </label>
                         <select
                             value={config.schemaVersion}
-                            onChange={(e) => setConfig(prev => ({ ...prev, schemaVersion: parseInt(e.target.value) }))}
-                            className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                            onChange={(e) => updateConfig('schemaVersion', parseInt(e.target.value))}
+                            className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
                             <option value={1}>Version 1</option>
                             <option value={2}>Version 2 (권장)</option>
@@ -152,7 +205,7 @@ export default function TrivySettingsPage() {
                                     key={severity}
                                     onClick={() => toggleSeverity(severity)}
                                     className={`px-3 py-1 rounded-lg border text-sm transition-colors ${config.severities.includes(severity)
-                                        ? 'border-red-500 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
+                                        ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400'
                                         : 'border-slate-200 dark:border-slate-700 text-slate-500'
                                         }`}
                                 >
@@ -177,7 +230,7 @@ export default function TrivySettingsPage() {
                                     key={scanner.id}
                                     onClick={() => toggleScanner(scanner.id)}
                                     className={`px-3 py-1 rounded-lg border text-sm transition-colors ${config.scanners.includes(scanner.id)
-                                        ? 'border-red-500 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400'
+                                        ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400'
                                         : 'border-slate-200 dark:border-slate-700 text-slate-500'
                                         }`}
                                 >
@@ -193,8 +246,8 @@ export default function TrivySettingsPage() {
                             <p className="text-sm text-slate-500">수정 버전이 없는 취약점을 결과에서 제외</p>
                         </div>
                         <button
-                            onClick={() => setConfig(prev => ({ ...prev, ignoreUnfixed: !prev.ignoreUnfixed }))}
-                            className={`relative w-12 h-6 rounded-full transition-colors ${config.ignoreUnfixed ? 'bg-red-600' : 'bg-slate-200 dark:bg-slate-700'
+                            onClick={() => updateConfig('ignoreUnfixed', !config.ignoreUnfixed)}
+                            className={`relative w-12 h-6 rounded-full transition-colors ${config.ignoreUnfixed ? 'bg-blue-600' : 'bg-slate-200 dark:bg-slate-700'
                                 }`}
                         >
                             <span
@@ -220,8 +273,8 @@ export default function TrivySettingsPage() {
                         <input
                             type="text"
                             value={config.timeout}
-                            onChange={(e) => setConfig(prev => ({ ...prev, timeout: e.target.value }))}
-                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                            onChange={(e) => updateConfig('timeout', e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                             placeholder="10m"
                         />
                     </div>
@@ -232,8 +285,8 @@ export default function TrivySettingsPage() {
                         <input
                             type="text"
                             value={config.cacheDir}
-                            onChange={(e) => setConfig(prev => ({ ...prev, cacheDir: e.target.value }))}
-                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                            onChange={(e) => updateConfig('cacheDir', e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                             placeholder="/tmp/trivy-cache"
                         />
                     </div>
@@ -247,6 +300,15 @@ export default function TrivySettingsPage() {
                         <span className="flex items-center gap-2 text-green-600">
                             <CheckCircle className="h-5 w-5" />
                             저장됨
+                        </span>
+                    )}
+                    {hasChanges && !saved && (
+                        <span className="text-sm text-orange-600">변경사항 있음</span>
+                    )}
+                    {testResult === 'testing' && (
+                        <span className="flex items-center gap-2 text-blue-600">
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                            테스트 중...
                         </span>
                     )}
                     {testResult === 'success' && (
@@ -272,16 +334,22 @@ export default function TrivySettingsPage() {
                     </button>
                     <button
                         onClick={handleTest}
-                        className="flex items-center gap-2 px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                        disabled={testResult === 'testing'}
+                        className="flex items-center gap-2 px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
                     >
                         <Cpu className="h-4 w-4" />
                         테스트
                     </button>
                     <button
                         onClick={handleSave}
-                        className="flex items-center gap-2 px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                        disabled={updateMutation.isPending || !hasChanges}
+                        className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
                     >
-                        <Save className="h-4 w-4" />
+                        {updateMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                            <Save className="h-4 w-4" />
+                        )}
                         저장
                     </button>
                 </div>

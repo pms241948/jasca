@@ -1074,3 +1074,65 @@ export function useTrivySettings() {
 export function useAiSettings() {
     return useSettings<AiSettings>('ai');
 }
+
+// ============ Profile API ============
+
+export interface UserProfile {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    status: string;
+    mfaEnabled: boolean;
+    organization?: { id: string; name: string };
+    createdAt: string;
+}
+
+export interface NotificationSettings {
+    emailAlerts: boolean;
+    criticalOnly: boolean;
+    weeklyDigest: boolean;
+}
+
+export function useProfile() {
+    return useQuery<UserProfile>({
+        queryKey: ['profile'],
+        queryFn: () => authFetch(`${API_BASE}/users/me`),
+    });
+}
+
+export function useUpdateProfile() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (data: { name?: string }) =>
+            authFetch(`${API_BASE}/users/me`, {
+                method: 'PUT',
+                body: JSON.stringify(data),
+            }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['profile'] });
+        },
+    });
+}
+
+export function useNotificationSettings() {
+    return useQuery<NotificationSettings>({
+        queryKey: ['notification-settings'],
+        queryFn: () => authFetch(`${API_BASE}/users/me/notification-settings`),
+    });
+}
+
+export function useUpdateNotificationSettings() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: (data: Partial<NotificationSettings>) =>
+            authFetch(`${API_BASE}/users/me/notification-settings`, {
+                method: 'PUT',
+                body: JSON.stringify(data),
+            }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['notification-settings'] });
+        },
+    });
+}
+
