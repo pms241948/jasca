@@ -184,6 +184,7 @@ export function useAiExecution(
                     outputTokens: data.outputTokens,
                     durationMs: data.durationMs,
                 },
+                usedPrompt: data.usedPrompt,
                 createdAt: new Date(),
             };
 

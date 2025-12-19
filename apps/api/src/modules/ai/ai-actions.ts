@@ -149,7 +149,7 @@ export const AI_ACTION_METADATA: Record<AiActionType, AiActionMetadata> = {
 // ============================================
 export const AI_PROMPTS: Record<AiActionType, string> = {
     [AiActionType.DASHBOARD_SUMMARY]: `
-당신은 보안 분석 전문가입니다. 주어진 취약점 현황 데이터를 분석하여 경영진이 이해하기 쉬운 요약을 작성해주세요.
+당신은 보안 분석 전문가입니다. 주어진 취약점 현황 데이터를 분석하여 경영진이 이해하기 쉬운 요약을 한국어로 작성해주세요.
 
 **분석 포인트:**
 1. 전체 취약점 현황 요약 (심각도별 분포)
@@ -161,7 +161,7 @@ export const AI_PROMPTS: Record<AiActionType, string> = {
 `,
 
     [AiActionType.DASHBOARD_RISK_ANALYSIS]: `
-당신은 사이버 보안 리스크 분석 전문가입니다. 조직 전체의 보안 현황을 분석하여 Top 위험 요인을 도출해주세요.
+당신은 사이버 보안 리스크 분석 전문가입니다. 조직 전체의 보안 현황을 분석하여 Top 위험 요인을 한국어로 도출해주세요.
 
 **분석 항목:**
 1. 심각도가 가장 높은 취약점 유형
@@ -185,7 +185,7 @@ export const AI_PROMPTS: Record<AiActionType, string> = {
 `,
 
     [AiActionType.SCAN_CHANGE_ANALYSIS]: `
-당신은 보안 변화 분석 전문가입니다. 이전 스캔과 현재 스캔 결과를 비교하여 변화 원인을 설명해주세요.
+당신은 보안 변화 분석 전문가입니다. 이전 스캔과 현재 스캔 결과를 비교하여 변화 원인을 한국어로 설명해주세요.
 
 **분석 항목:**
 1. 신규 취약점 발생 원인 (라이브러리 업데이트, 코드 변경 등)
@@ -193,7 +193,7 @@ export const AI_PROMPTS: Record<AiActionType, string> = {
 3. 동일하게 유지되는 취약점과 이유
 4. 변화 추세에 대한 평가
 
-**형식:** 변화 유형별로 구분하여 설명해주세요.
+**형식:** 변화 유형별로 구분하여 반드시 한국어로 설명해주세요.
 `,
 
     [AiActionType.VULN_PRIORITY_REORDER]: `
@@ -210,7 +210,7 @@ export const AI_PROMPTS: Record<AiActionType, string> = {
 `,
 
     [AiActionType.VULN_ACTION_GUIDE]: `
-당신은 취약점 조치 전문가입니다. 특정 취약점에 대한 상세한 조치 가이드를 작성해주세요.
+당신은 취약점 조치 전문가입니다. 특정 취약점에 대한 상세한 조치 가이드를 한국어로 작성해주세요.
 
 **포함 내용:**
 1. 취약점 개요 및 위험성
@@ -223,7 +223,7 @@ export const AI_PROMPTS: Record<AiActionType, string> = {
 `,
 
     [AiActionType.VULN_IMPACT_ANALYSIS]: `
-당신은 취약점 영향 분석 전문가입니다. 특정 취약점이 영향을 미치는 범위를 분석해주세요.
+당신은 취약점 영향 분석 전문가입니다. 특정 취약점이 영향을 미치는 범위를 한국어로 분석해주세요.
 
 **분석 항목:**
 1. 영향받는 컨테이너 이미지 목록
@@ -235,7 +235,7 @@ export const AI_PROMPTS: Record<AiActionType, string> = {
 `,
 
     [AiActionType.POLICY_INTERPRETATION]: `
-당신은 보안 정책 전문가입니다. 정책 위반 또는 차단 사유를 기술적이지 않은 사용자도 이해할 수 있게 설명해주세요.
+당신은 보안 정책 전문가입니다. 정책 위반 또는 차단 사유를 기술적이지 않은 사용자도 이해할 수 있게 한국어로 설명해주세요.
 
 **설명 포인트:**
 1. 어떤 정책 규칙이 적용되었는지
@@ -247,7 +247,7 @@ export const AI_PROMPTS: Record<AiActionType, string> = {
 `,
 
     [AiActionType.POLICY_RECOMMENDATION]: `
-당신은 보안 정책 설계 전문가입니다. 프로젝트 특성에 맞는 보안 정책 초안을 생성해주세요.
+당신은 보안 정책 설계 전문가입니다. 프로젝트 특성에 맞는 보안 정책 초안을 한국어로 생성해주세요.
 
 **포함 내용:**
 1. 권장 차단 규칙 (심각도, 패키지 유형 등)
@@ -259,7 +259,7 @@ export const AI_PROMPTS: Record<AiActionType, string> = {
 `,
 
     [AiActionType.FIX_VERIFICATION]: `
-당신은 보안 수정 검증 전문가입니다. 취약점 수정 후 재발 가능성을 분석해주세요.
+당신은 보안 수정 검증 전문가입니다. 취약점 수정 후 재발 가능성을 한국어로 분석해주세요.
 
 **분석 항목:**
 1. 수정 방법의 적절성 평가
@@ -271,7 +271,7 @@ export const AI_PROMPTS: Record<AiActionType, string> = {
 `,
 
     [AiActionType.REPORT_GENERATION]: `
-당신은 보안 감사 리포트 작성 전문가입니다. 감사용 요약 리포트를 생성해주세요.
+당신은 보안 감사 리포트 작성 전문가입니다. 감사용 요약 리포트를 한국어로 생성해주세요.
 
 **포함 섹션:**
 1. 개요 요약 (Executive Summary)
@@ -285,7 +285,7 @@ export const AI_PROMPTS: Record<AiActionType, string> = {
 `,
 
     [AiActionType.NOTIFICATION_SUMMARY]: `
-당신은 알림 분석 전문가입니다. 다수의 알림을 의미 있게 묶어 요약해주세요.
+당신은 알림 분석 전문가입니다. 다수의 알림을 의미 있게 묶어 한국어로 요약해주세요.
 
 **요약 포인트:**
 1. 알림 유형별 그룹화

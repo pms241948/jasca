@@ -31,6 +31,7 @@ export interface AiExecutionResult {
     model?: string;
     inputTokens?: number;
     outputTokens?: number;
+    usedPrompt?: string;
 }
 
 export interface TokenEstimate {
@@ -45,6 +46,140 @@ export class AiService {
     constructor(private readonly prisma: PrismaService) { }
 
     /**
+     * Get AI settings from database
+     */
+    private async getAiSettings(): Promise<{
+        provider: string;
+        apiUrl: string;
+        apiKey?: string;
+        model: string;
+        enabled: boolean;
+    } | null> {
+        try {
+            const settings = await this.prisma.systemSettings.findUnique({
+                where: { key: 'ai' },
+            });
+            if (!settings) return null;
+
+            const value = settings.value as Record<string, unknown>;
+            return {
+                provider: (value.provider as string) || 'ollama',
+                apiUrl: (value.apiUrl as string) || 'http://localhost:11434',
+                apiKey: value.apiKey as string | undefined,
+                // Use summaryModel or remediationModel field from settings
+                model: (value.summaryModel as string) || (value.model as string) || 'llama3.2',
+                enabled: (value.enableAutoSummary as boolean) ?? (value.enabled as boolean) ?? true,
+            };
+        } catch (error) {
+            this.logger.warn('Failed to fetch AI settings:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Get prompt for action (custom from DB or default)
+     */
+    async getPromptForAction(action: AiActionType): Promise<string> {
+        try {
+            const customPrompts = await this.prisma.systemSettings.findUnique({
+                where: { key: 'ai_prompts' },
+            });
+
+            if (customPrompts) {
+                const prompts = customPrompts.value as Record<string, string>;
+                if (prompts[action]) {
+                    return prompts[action];
+                }
+            }
+        } catch (error) {
+            this.logger.warn('Failed to fetch custom prompts:', error);
+        }
+
+        // Return default prompt
+        return AI_PROMPTS[action] || '';
+    }
+
+    /**
+     * Get all prompts (custom + defaults)
+     */
+    async getAllPrompts(): Promise<Record<string, { prompt: string; isCustom: boolean; label: string; description: string }>> {
+        let customPrompts: Record<string, string> = {};
+
+        try {
+            const settings = await this.prisma.systemSettings.findUnique({
+                where: { key: 'ai_prompts' },
+            });
+            if (settings) {
+                customPrompts = settings.value as Record<string, string>;
+            }
+        } catch (error) {
+            this.logger.warn('Failed to fetch custom prompts:', error);
+        }
+
+        const result: Record<string, { prompt: string; isCustom: boolean; label: string; description: string }> = {};
+
+        for (const action of Object.values(AiActionType)) {
+            const metadata = AI_ACTION_METADATA[action];
+            result[action] = {
+                prompt: customPrompts[action] || AI_PROMPTS[action] || '',
+                isCustom: !!customPrompts[action],
+                label: metadata?.label || action,
+                description: metadata?.description || '',
+            };
+        }
+
+        return result;
+    }
+
+    /**
+     * Update prompt for action
+     */
+    async updatePrompt(action: AiActionType, prompt: string): Promise<void> {
+        let customPrompts: Record<string, string> = {};
+
+        try {
+            const settings = await this.prisma.systemSettings.findUnique({
+                where: { key: 'ai_prompts' },
+            });
+            if (settings) {
+                customPrompts = settings.value as Record<string, string>;
+            }
+        } catch (error) {
+            // Continue with empty prompts
+        }
+
+        customPrompts[action] = prompt;
+
+        await this.prisma.systemSettings.upsert({
+            where: { key: 'ai_prompts' },
+            update: { value: customPrompts as any },
+            create: { key: 'ai_prompts', value: customPrompts as any },
+        });
+    }
+
+    /**
+     * Reset prompt to default
+     */
+    async resetPrompt(action: AiActionType): Promise<void> {
+        try {
+            const settings = await this.prisma.systemSettings.findUnique({
+                where: { key: 'ai_prompts' },
+            });
+
+            if (settings) {
+                const customPrompts = settings.value as Record<string, string>;
+                delete customPrompts[action];
+
+                await this.prisma.systemSettings.update({
+                    where: { key: 'ai_prompts' },
+                    data: { value: customPrompts as any },
+                });
+            }
+        } catch (error) {
+            this.logger.warn('Failed to reset prompt:', error);
+        }
+    }
+    /**
      * Execute AI action with given context
      */
     async executeAction(
@@ -54,35 +189,192 @@ export class AiService {
     ): Promise<AiExecutionResult> {
         this.logger.log(`Executing AI action: ${action} for user: ${userId}`);
 
-        // Get the prompt template
-        const promptTemplate = AI_PROMPTS[action];
+        // Get AI settings from database
+        const aiSettings = await this.getAiSettings();
+
+        // Get the prompt template (custom or default)
+        const promptTemplate = await this.getPromptForAction(action);
         const metadata = AI_ACTION_METADATA[action];
 
         // Build the full prompt with context
-        const contextStr = JSON.stringify(context, null, 2);
-        const fullPrompt = `${promptTemplate}\n\n**컨텍스트 데이터:**\n\`\`\`json\n${contextStr}\n\`\`\``;
+        const maskedContext = this.maskPii(JSON.stringify(context, null, 2));
+        const fullPrompt = `${promptTemplate}\n\n**컨텍스트 데이터:**\n\`\`\`json\n${maskedContext}\n\`\`\``;
 
-        // Mask PII in context
-        const maskedContext = this.maskPii(contextStr);
+        let content: string;
+        let modelName: string;
 
-        // TODO: Get AI settings from database and call actual LLM API
-        // For now, generate a mock response based on action type
-        const content = await this.generateMockResponse(action, context);
+        // If AI settings exist and enabled, use real AI
+        if (aiSettings?.enabled && aiSettings.apiUrl) {
+            try {
+                const result = await this.callAiProvider(aiSettings, fullPrompt);
+                content = result.content;
+                modelName = result.model;
+                this.logger.log(`AI call successful using ${aiSettings.provider}/${modelName}`);
+            } catch (error) {
+                this.logger.error('AI call failed, falling back to mock:', error);
+                content = await this.generateMockResponse(action, context);
+                modelName = 'mock-model-v1 (fallback)';
+            }
+        } else {
+            // Fallback to mock response
+            this.logger.warn('AI settings not configured, using mock response');
+            content = await this.generateMockResponse(action, context);
+            modelName = 'mock-model-v1';
+        }
 
         // Estimate tokens
         const estimate = this.estimateTokens(action, context);
 
-        // Log the execution (in production, save to database)
-        this.logger.log(`AI execution completed. Input tokens: ${estimate.inputTokens}, Output tokens: ${estimate.outputTokens}`);
+        // Log the execution
+        this.logger.log(`AI execution completed. Model: ${modelName}, Input tokens: ${estimate.inputTokens}, Output tokens: ${estimate.outputTokens}`);
 
         return {
             id: crypto.randomUUID(),
             action,
             content,
             summary: this.generateSummaryFromContent(content),
-            model: 'mock-model-v1', // Would be from AI settings
+            model: modelName,
             inputTokens: estimate.inputTokens,
             outputTokens: estimate.outputTokens,
+            usedPrompt: promptTemplate,
+        };
+    }
+
+    /**
+     * Call AI provider (Ollama, vLLM, OpenAI, etc.)
+     */
+    private async callAiProvider(
+        settings: { provider: string; apiUrl: string; apiKey?: string; model: string },
+        prompt: string,
+    ): Promise<{ content: string; model: string }> {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+
+        try {
+            switch (settings.provider) {
+                case 'ollama':
+                    return await this.callOllama(settings.apiUrl, settings.model, prompt, controller.signal);
+                case 'vllm':
+                    return await this.callVllm(settings.apiUrl, settings.model, prompt, settings.apiKey, controller.signal);
+                case 'openai':
+                    return await this.callOpenAi(settings.apiUrl, settings.model, prompt, settings.apiKey!, controller.signal);
+                default:
+                    throw new Error(`Unsupported AI provider: ${settings.provider}`);
+            }
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+
+    /**
+     * Call Ollama API
+     */
+    private async callOllama(
+        apiUrl: string,
+        model: string,
+        prompt: string,
+        signal: AbortSignal,
+    ): Promise<{ content: string; model: string }> {
+        const response = await fetch(`${apiUrl}/api/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model,
+                prompt,
+                stream: false,
+                options: {
+                    temperature: 0.7,
+                    top_p: 0.9,
+                },
+            }),
+            signal,
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Ollama API error: ${response.status} - ${errorText}`);
+        }
+
+        const data = await response.json() as { response: string; model: string };
+        return {
+            content: data.response,
+            model: data.model || model,
+        };
+    }
+
+    /**
+     * Call vLLM API (OpenAI-compatible)
+     */
+    private async callVllm(
+        apiUrl: string,
+        model: string,
+        prompt: string,
+        apiKey: string | undefined,
+        signal: AbortSignal,
+    ): Promise<{ content: string; model: string }> {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+        const response = await fetch(`${apiUrl}/v1/completions`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                model,
+                prompt,
+                max_tokens: 2000,
+                temperature: 0.7,
+            }),
+            signal,
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`vLLM API error: ${response.status} - ${errorText}`);
+        }
+
+        const data = await response.json() as { choices: Array<{ text: string }>; model: string };
+        return {
+            content: data.choices[0]?.text || '',
+            model: data.model || model,
+        };
+    }
+
+    /**
+     * Call OpenAI API
+     */
+    private async callOpenAi(
+        apiUrl: string,
+        model: string,
+        prompt: string,
+        apiKey: string,
+        signal: AbortSignal,
+    ): Promise<{ content: string; model: string }> {
+        const response = await fetch(`${apiUrl}/v1/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model,
+                messages: [
+                    { role: 'system', content: '당신은 보안 취약점 분석 전문가입니다. 한국어로 답변하세요.' },
+                    { role: 'user', content: prompt },
+                ],
+                temperature: 0.7,
+            }),
+            signal,
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+        }
+
+        const data = await response.json() as { choices: Array<{ message: { content: string } }>; model: string };
+        return {
+            content: data.choices[0]?.message?.content || '',
+            model: data.model || model,
         };
     }
 

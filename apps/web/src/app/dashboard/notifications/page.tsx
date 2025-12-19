@@ -16,6 +16,9 @@ import {
     useMarkAllNotificationsRead,
     type Notification
 } from '@/lib/api-hooks';
+import { AiButton, AiResultPanel } from '@/components/ai';
+import { useAiExecution, useNotificationsAiContext } from '@/hooks/use-ai-execution';
+import { useAiStore } from '@/stores/ai-store';
 
 function getNotificationIcon(type: string) {
     switch (type) {
@@ -56,6 +59,33 @@ export default function NotificationsPage() {
         : notifications;
 
     const unreadCount = notifications.filter(n => !n.isRead).length;
+
+    // AI Execution for notification summary
+    const collectNotificationsContext = useNotificationsAiContext();
+    const {
+        execute: executeNotificationSummary,
+        isLoading: aiLoading,
+        result: aiResult,
+        previousResults: aiPreviousResults,
+        estimateTokens,
+        cancel: cancelAi,
+        progress: aiProgress,
+    } = useAiExecution('notification.summary');
+
+    const { activePanel, closePanel } = useAiStore();
+
+    const handleAiSummary = () => {
+        const context = collectNotificationsContext(notifications);
+        executeNotificationSummary(context);
+    };
+
+    const handleAiRegenerate = () => {
+        handleAiSummary();
+    };
+
+    const estimatedTokens = notifications.length > 0
+        ? estimateTokens(collectNotificationsContext(notifications.slice(0, 10)))
+        : 0;
 
     const handleMarkAsRead = async (id: string) => {
         try {
@@ -108,6 +138,16 @@ export default function NotificationsPage() {
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
+                    <AiButton
+                        action="notification.summary"
+                        variant="primary"
+                        size="md"
+                        estimatedTokens={estimatedTokens}
+                        loading={aiLoading}
+                        onExecute={handleAiSummary}
+                        onCancel={cancelAi}
+                        disabled={notifications.length === 0}
+                    />
                     <button
                         onClick={handleMarkAllAsRead}
                         disabled={unreadCount === 0 || markAllReadMutation.isPending}
@@ -208,6 +248,18 @@ export default function NotificationsPage() {
                     ))}
                 </div>
             )}
+
+            {/* AI Result Panel */}
+            <AiResultPanel
+                isOpen={activePanel?.key === 'notification.summary'}
+                onClose={closePanel}
+                result={aiResult}
+                previousResults={aiPreviousResults}
+                loading={aiLoading}
+                loadingProgress={aiProgress}
+                onRegenerate={handleAiRegenerate}
+                action="notification.summary"
+            />
         </div>
     );
 }

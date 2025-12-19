@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards, Query, BadRequestException, Req, ForbiddenException } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Body, Param, UseGuards, Query, BadRequestException, Req, ForbiddenException } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -36,9 +36,11 @@ interface OllamaListResponse {
 
 interface RequestWithUser extends Request {
     user?: {
-        userId: string;
+        id: string;
         email: string;
-        role: Role;
+        name: string;
+        organizationId?: string;
+        roles: Array<{ role: string }>;
     };
 }
 
@@ -57,10 +59,14 @@ export class AiController {
             throw new BadRequestException('User not authenticated');
         }
 
+        // Get user roles as string array
+        const userRoles = user.roles?.map(r => r.role) || [];
+
         // Check role-based access
         const metadata = AI_ACTION_METADATA[dto.action];
         if (metadata?.requiredRoles && metadata.requiredRoles.length > 0) {
-            if (!metadata.requiredRoles.includes(user.role)) {
+            const hasRequiredRole = metadata.requiredRoles.some(role => userRoles.includes(role));
+            if (!hasRequiredRole && !userRoles.includes('SYSTEM_ADMIN')) {
                 throw new ForbiddenException('Insufficient permissions for this AI action');
             }
         }
@@ -68,7 +74,7 @@ export class AiController {
         const startTime = Date.now();
 
         try {
-            const result = await this.aiService.executeAction(dto.action, dto.context, user.userId);
+            const result = await this.aiService.executeAction(dto.action, dto.context, user.id);
             const durationMs = Date.now() - startTime;
 
             return {
@@ -80,6 +86,7 @@ export class AiController {
                 inputTokens: result.inputTokens,
                 outputTokens: result.outputTokens,
                 durationMs,
+                usedPrompt: result.usedPrompt,
             };
         } catch (error) {
             throw new BadRequestException(
@@ -103,6 +110,41 @@ export class AiController {
             totalTokens: estimate.inputTokens + estimate.outputTokens,
             maxContextTokens: metadata?.maxContextTokens || 2000,
         };
+    }
+
+    /**
+     * Get all prompts
+     */
+    @Get('prompts')
+    @Roles(Role.SYSTEM_ADMIN, Role.ORG_ADMIN)
+    async getAllPrompts() {
+        return this.aiService.getAllPrompts();
+    }
+
+    /**
+     * Update prompt for action
+     */
+    @Post('prompts/:action')
+    @Roles(Role.SYSTEM_ADMIN, Role.ORG_ADMIN)
+    async updatePrompt(
+        @Param('action') action: string,
+        @Body() dto: { prompt: string },
+    ) {
+        if (!dto.prompt) {
+            throw new BadRequestException('Prompt is required');
+        }
+        await this.aiService.updatePrompt(action as AiActionType, dto.prompt);
+        return { success: true, action, message: 'Prompt updated successfully' };
+    }
+
+    /**
+     * Reset prompt to default
+     */
+    @Delete('prompts/:action')
+    @Roles(Role.SYSTEM_ADMIN, Role.ORG_ADMIN)
+    async resetPrompt(@Param('action') action: string) {
+        await this.aiService.resetPrompt(action as AiActionType);
+        return { success: true, action, message: 'Prompt reset to default' };
     }
 
     /**

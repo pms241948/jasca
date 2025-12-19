@@ -21,6 +21,9 @@ import {
     TrendingUp,
     TrendingDown,
 } from 'lucide-react';
+import { AiButton, AiResultPanel } from '@/components/ai';
+import { useAiExecution } from '@/hooks/use-ai-execution';
+import { useAiStore } from '@/stores/ai-store';
 
 // Mock data
 const organizationStats = [
@@ -85,14 +88,58 @@ function StatCard({
 }
 
 export default function AdminDashboardPage() {
+    // AI Execution for risk analysis
+    const {
+        execute: executeRiskAnalysis,
+        isLoading: aiLoading,
+        result: aiResult,
+        previousResults: aiPreviousResults,
+        estimateTokens,
+        cancel: cancelAi,
+        progress: aiProgress,
+    } = useAiExecution('dashboard.riskAnalysis');
+
+    const { activePanel, closePanel } = useAiStore();
+
+    const handleAiRiskAnalysis = () => {
+        const context = {
+            screen: 'admin-dashboard',
+            organizationStats,
+            policyViolations,
+            severityDistribution,
+            timestamp: new Date().toISOString(),
+        };
+        executeRiskAnalysis(context);
+    };
+
+    const handleAiRegenerate = () => {
+        handleAiRiskAnalysis();
+    };
+
+    const estimatedTokens = estimateTokens({
+        organizationStats,
+        policyViolations,
+    });
+
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div>
-                <h1 className="text-2xl font-bold text-slate-900 dark:text-white">관리자 대시보드</h1>
-                <p className="text-slate-600 dark:text-slate-400 mt-1">
-                    시스템 전체 보안 현황을 모니터링합니다
-                </p>
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-2xl font-bold text-slate-900 dark:text-white">관리자 대시보드</h1>
+                    <p className="text-slate-600 dark:text-slate-400 mt-1">
+                        시스템 전체 보안 현황을 모니터링합니다
+                    </p>
+                </div>
+                <AiButton
+                    action="dashboard.riskAnalysis"
+                    variant="primary"
+                    size="md"
+                    estimatedTokens={estimatedTokens}
+                    loading={aiLoading}
+                    onExecute={handleAiRiskAnalysis}
+                    onCancel={cancelAi}
+                />
             </div>
 
             {/* Stats Grid */}
@@ -205,10 +252,10 @@ export default function AdminDashboardPage() {
                                 <p className="text-sm text-slate-500">{item.violations}개 정책 위반</p>
                             </div>
                             <span className={`px-2 py-1 rounded text-xs font-medium ${item.severity === 'CRITICAL'
-                                    ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                    : item.severity === 'HIGH'
-                                        ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
-                                        : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+                                ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                : item.severity === 'HIGH'
+                                    ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+                                    : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
                                 }`}>
                                 {item.severity}
                             </span>
@@ -216,6 +263,18 @@ export default function AdminDashboardPage() {
                     ))}
                 </div>
             </div>
+
+            {/* AI Result Panel */}
+            <AiResultPanel
+                isOpen={activePanel?.key === 'dashboard.riskAnalysis'}
+                onClose={closePanel}
+                result={aiResult}
+                previousResults={aiPreviousResults}
+                loading={aiLoading}
+                loadingProgress={aiProgress}
+                onRegenerate={handleAiRegenerate}
+                action="dashboard.riskAnalysis"
+            />
         </div>
     );
 }

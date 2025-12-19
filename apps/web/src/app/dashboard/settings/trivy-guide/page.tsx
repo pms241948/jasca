@@ -29,6 +29,9 @@ import {
 import { CodeBlock } from '@/components/ui/code-block';
 import { StepNavigator, type Step } from '@/components/ui/step-navigator';
 import { useApiTokens, useScans } from '@/lib/api-hooks';
+import { AiButton, AiResultPanel } from '@/components/ai';
+import { useAiExecution } from '@/hooks/use-ai-execution';
+import { useAiStore } from '@/stores/ai-store';
 
 // Types
 type Environment = 'local' | 'ci' | 'docker';
@@ -91,6 +94,39 @@ export default function TrivyGuidePage() {
 
     // Refs for section scrolling
     const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+    // AI Execution for command generation
+    const {
+        execute: executeCommandGeneration,
+        isLoading: aiLoading,
+        result: aiResult,
+        previousResults: aiPreviousResults,
+        estimateTokens,
+        cancel: cancelAi,
+        progress: aiProgress,
+    } = useAiExecution('guide.trivyCommand');
+
+    const { activePanel, closePanel } = useAiStore();
+
+    const handleAiCommandGeneration = () => {
+        const context = {
+            screen: 'trivy-guide',
+            environment,
+            scanType,
+            projectId,
+            timestamp: new Date().toISOString(),
+        };
+        executeCommandGeneration(context);
+    };
+
+    const handleAiRegenerate = () => {
+        handleAiCommandGeneration();
+    };
+
+    const estimatedTokens = estimateTokens({
+        environment,
+        scanType,
+    });
 
     // Get endpoint URL based on environment
     const getEndpointUrl = useCallback(() => {
@@ -378,6 +414,15 @@ done`,
                         Trivy 진단 결과를 JASCA로 전송하는 방법을 안내합니다
                     </p>
                 </div>
+                <AiButton
+                    action="guide.trivyCommand"
+                    variant="primary"
+                    size="md"
+                    estimatedTokens={estimatedTokens}
+                    loading={aiLoading}
+                    onExecute={handleAiCommandGeneration}
+                    onCancel={cancelAi}
+                />
             </div>
 
             {/* Target Users */}
@@ -877,6 +922,18 @@ curl -X POST "${getEndpointUrl()}/file" \\
                     </div>
                 </Link>
             </div>
+
+            {/* AI Result Panel */}
+            <AiResultPanel
+                isOpen={activePanel?.key === 'guide.trivyCommand'}
+                onClose={closePanel}
+                result={aiResult}
+                previousResults={aiPreviousResults}
+                loading={aiLoading}
+                loadingProgress={aiProgress}
+                onRegenerate={handleAiRegenerate}
+                action="guide.trivyCommand"
+            />
         </div>
     );
 }

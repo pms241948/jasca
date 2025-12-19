@@ -15,6 +15,7 @@ import {
     Check,
     FileText,
     GitCompare,
+    MessageSquare,
 } from 'lucide-react';
 import { AiActionType, AI_ACTION_CONFIG } from './ai-button';
 
@@ -32,6 +33,7 @@ export interface AiResult {
         outputTokens?: number;
         durationMs?: number;
     };
+    usedPrompt?: string;
     createdAt: Date;
 }
 
@@ -67,6 +69,7 @@ export function AiResultPanel({
     const [showDiff, setShowDiff] = useState(false);
     const [currentResultIndex, setCurrentResultIndex] = useState(0);
     const [copied, setCopied] = useState(false);
+    const [showPromptModal, setShowPromptModal] = useState(false);
 
     // Reset state when panel opens/closes
     useEffect(() => {
@@ -228,9 +231,7 @@ export function AiResultPanel({
                                             </p>
                                         </div>
                                     )}
-                                    <div className="whitespace-pre-wrap">
-                                        {displayedResult.content}
-                                    </div>
+                                    <MarkdownContent content={displayedResult.content} />
                                 </div>
                             )}
                         </div>
@@ -266,6 +267,15 @@ export function AiResultPanel({
                                         </>
                                     )}
                                 </button>
+                                {displayedResult.usedPrompt && (
+                                    <button
+                                        onClick={() => setShowPromptModal(true)}
+                                        className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                                    >
+                                        <MessageSquare className="h-4 w-4" />
+                                        프롬프트
+                                    </button>
+                                )}
                             </div>
                             <div className="flex items-center gap-2">
                                 {onSaveSnapshot && (
@@ -299,6 +309,52 @@ export function AiResultPanel({
                     </div>
                 )}
             </div>
+
+            {/* Prompt Modal */}
+            {showPromptModal && displayedResult?.usedPrompt && (
+                <>
+                    <div
+                        className="fixed inset-0 bg-black/50 z-[60]"
+                        onClick={() => setShowPromptModal(false)}
+                    />
+                    <div className="fixed inset-4 md:inset-10 lg:inset-20 bg-white dark:bg-slate-900 rounded-xl shadow-2xl z-[70] flex flex-col overflow-hidden">
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-gradient-to-r from-violet-500 to-purple-500 rounded-lg">
+                                    <MessageSquare className="h-5 w-5 text-white" />
+                                </div>
+                                <div>
+                                    <h2 className="font-semibold text-slate-900 dark:text-white">
+                                        사용된 프롬프트
+                                    </h2>
+                                    <p className="text-xs text-slate-500">
+                                        {config?.label || displayedResult.action}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowPromptModal(false)}
+                                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-6">
+                            <pre className="whitespace-pre-wrap font-mono text-sm text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 p-4 rounded-lg">
+                                {displayedResult.usedPrompt}
+                            </pre>
+                        </div>
+                        <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex justify-end">
+                            <button
+                                onClick={() => setShowPromptModal(false)}
+                                className="px-4 py-2 text-sm bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                            >
+                                닫기
+                            </button>
+                        </div>
+                    </div>
+                </>
+            )}
         </>
     );
 }
@@ -370,3 +426,243 @@ function AiDiffView({ current, previous }: AiDiffViewProps) {
 }
 
 export { AiDiffView };
+
+// ============================================
+// Markdown Content Renderer
+// ============================================
+interface MarkdownContentProps {
+    content: string;
+}
+
+function MarkdownContent({ content }: MarkdownContentProps) {
+    // Parse markdown content into React elements
+    const renderMarkdown = (text: string): React.ReactNode[] => {
+        const lines = text.split('\n');
+        const elements: React.ReactNode[] = [];
+        let inCodeBlock = false;
+        let codeBlockContent: string[] = [];
+        let codeBlockLang = '';
+        let listItems: string[] = [];
+        let isOrderedList = false;
+
+        const flushList = () => {
+            if (listItems.length > 0) {
+                const ListTag = isOrderedList ? 'ol' : 'ul';
+                elements.push(
+                    <ListTag key={`list-${elements.length}`} className={isOrderedList ? 'list-decimal pl-6 my-2' : 'list-disc pl-6 my-2'}>
+                        {listItems.map((item, i) => (
+                            <li key={i} className="my-1">{renderInline(item)}</li>
+                        ))}
+                    </ListTag>
+                );
+                listItems = [];
+            }
+        };
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+
+            // Code block handling
+            if (line.startsWith('```')) {
+                if (!inCodeBlock) {
+                    flushList();
+                    inCodeBlock = true;
+                    codeBlockLang = line.slice(3).trim();
+                    codeBlockContent = [];
+                } else {
+                    elements.push(
+                        <pre key={`code-${i}`} className="bg-slate-800 dark:bg-slate-900 text-slate-100 rounded-lg p-4 my-3 overflow-x-auto text-sm">
+                            <code className={codeBlockLang ? `language-${codeBlockLang}` : ''}>
+                                {codeBlockContent.join('\n')}
+                            </code>
+                        </pre>
+                    );
+                    inCodeBlock = false;
+                    codeBlockContent = [];
+                }
+                continue;
+            }
+
+            if (inCodeBlock) {
+                codeBlockContent.push(line);
+                continue;
+            }
+
+            // Headers
+            if (line.startsWith('### ')) {
+                flushList();
+                elements.push(<h3 key={`h3-${i}`} className="text-lg font-semibold text-slate-900 dark:text-white mt-4 mb-2">{renderInline(line.slice(4))}</h3>);
+                continue;
+            }
+            if (line.startsWith('## ')) {
+                flushList();
+                elements.push(<h2 key={`h2-${i}`} className="text-xl font-bold text-slate-900 dark:text-white mt-5 mb-3">{renderInline(line.slice(3))}</h2>);
+                continue;
+            }
+            if (line.startsWith('# ')) {
+                flushList();
+                elements.push(<h1 key={`h1-${i}`} className="text-2xl font-bold text-slate-900 dark:text-white mt-6 mb-4">{renderInline(line.slice(2))}</h1>);
+                continue;
+            }
+
+            // Ordered list
+            const orderedMatch = line.match(/^\d+\.\s+(.+)$/);
+            if (orderedMatch) {
+                if (!isOrderedList && listItems.length > 0) flushList();
+                isOrderedList = true;
+                listItems.push(orderedMatch[1]);
+                continue;
+            }
+
+            // Unordered list
+            if (line.startsWith('- ') || line.startsWith('* ')) {
+                if (isOrderedList && listItems.length > 0) flushList();
+                isOrderedList = false;
+                listItems.push(line.slice(2));
+                continue;
+            }
+
+            // Horizontal rule
+            if (line.match(/^---+$/) || line.match(/^\*\*\*+$/) || line.match(/^___+$/)) {
+                flushList();
+                elements.push(<hr key={`hr-${i}`} className="my-4 border-slate-200 dark:border-slate-700" />);
+                continue;
+            }
+
+            // Table handling - check if this line looks like a table row
+            if (line.includes('|') && line.trim().startsWith('|')) {
+                flushList();
+                // Collect all table rows
+                const tableRows: string[] = [line];
+                let j = i + 1;
+                while (j < lines.length && lines[j].includes('|') && lines[j].trim().startsWith('|')) {
+                    tableRows.push(lines[j]);
+                    j++;
+                }
+
+                if (tableRows.length >= 2) {
+                    // Parse table
+                    const parseRow = (row: string): string[] => {
+                        return row.split('|').slice(1, -1).map(cell => cell.trim());
+                    };
+
+                    const headerRow = parseRow(tableRows[0]);
+                    // Skip separator row (contains ---)
+                    const dataRows = tableRows.slice(2).map(parseRow);
+
+                    elements.push(
+                        <div key={`table-${i}`} className="my-4 overflow-x-auto">
+                            <table className="min-w-full border-collapse border border-slate-200 dark:border-slate-700 text-sm">
+                                <thead className="bg-slate-100 dark:bg-slate-800">
+                                    <tr>
+                                        {headerRow.map((cell, cellIdx) => (
+                                            <th key={cellIdx} className="border border-slate-200 dark:border-slate-700 px-3 py-2 text-left font-semibold text-slate-900 dark:text-white">
+                                                {renderInline(cell)}
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {dataRows.map((row, rowIdx) => (
+                                        <tr key={rowIdx} className={rowIdx % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50 dark:bg-slate-800/50'}>
+                                            {row.map((cell, cellIdx) => (
+                                                <td key={cellIdx} className="border border-slate-200 dark:border-slate-700 px-3 py-2 text-slate-700 dark:text-slate-300">
+                                                    {renderInline(cell)}
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    );
+                    // Skip processed rows
+                    i = j - 1;
+                    continue;
+                }
+            }
+
+            // Regular paragraph
+            flushList();
+            if (line.trim()) {
+                elements.push(<p key={`p-${i}`} className="my-2 text-slate-700 dark:text-slate-300">{renderInline(line)}</p>);
+            } else if (elements.length > 0) {
+                // Empty line - add spacing
+                elements.push(<div key={`br-${i}`} className="h-2" />);
+            }
+        }
+
+        flushList();
+
+        // Close unclosed code block
+        if (inCodeBlock && codeBlockContent.length > 0) {
+            elements.push(
+                <pre key="code-final" className="bg-slate-800 dark:bg-slate-900 text-slate-100 rounded-lg p-4 my-3 overflow-x-auto text-sm">
+                    <code>{codeBlockContent.join('\n')}</code>
+                </pre>
+            );
+        }
+
+        return elements;
+    };
+
+    // Render inline markdown (bold, italic, code, links)
+    const renderInline = (text: string): React.ReactNode => {
+        const parts: React.ReactNode[] = [];
+        let remaining = text;
+        let key = 0;
+
+        while (remaining.length > 0) {
+            // Bold **text**
+            const boldMatch = remaining.match(/^\*\*(.+?)\*\*/);
+            if (boldMatch) {
+                parts.push(<strong key={key++} className="font-semibold">{boldMatch[1]}</strong>);
+                remaining = remaining.slice(boldMatch[0].length);
+                continue;
+            }
+
+            // Italic *text*
+            const italicMatch = remaining.match(/^\*(.+?)\*/);
+            if (italicMatch) {
+                parts.push(<em key={key++}>{italicMatch[1]}</em>);
+                remaining = remaining.slice(italicMatch[0].length);
+                continue;
+            }
+
+            // Inline code `code`
+            const codeMatch = remaining.match(/^`([^`]+)`/);
+            if (codeMatch) {
+                parts.push(<code key={key++} className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-sm font-mono text-violet-600 dark:text-violet-400">{codeMatch[1]}</code>);
+                remaining = remaining.slice(codeMatch[0].length);
+                continue;
+            }
+
+            // Link [text](url)
+            const linkMatch = remaining.match(/^\[([^\]]+)\]\(([^)]+)\)/);
+            if (linkMatch) {
+                parts.push(<a key={key++} href={linkMatch[2]} target="_blank" rel="noopener noreferrer" className="text-violet-600 dark:text-violet-400 hover:underline">{linkMatch[1]}</a>);
+                remaining = remaining.slice(linkMatch[0].length);
+                continue;
+            }
+
+            // Regular character
+            const nextSpecial = remaining.search(/[\*`\[]/);
+            if (nextSpecial === -1) {
+                parts.push(remaining);
+                break;
+            } else if (nextSpecial === 0) {
+                parts.push(remaining[0]);
+                remaining = remaining.slice(1);
+            } else {
+                parts.push(remaining.slice(0, nextSpecial));
+                remaining = remaining.slice(nextSpecial);
+            }
+        }
+
+        return parts.length === 1 ? parts[0] : <>{parts}</>;
+    };
+
+    return <div className="markdown-content">{renderMarkdown(content)}</div>;
+}
+
+export { MarkdownContent };
